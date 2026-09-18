@@ -184,14 +184,15 @@ def main() -> int:
         ck = torch.load(args.feature_metric, map_location=mdev, weights_only=False)
         a = ck["args"]
         scaler = FeatureScaler().load_state_dict(ck["scaler"])
+        cols = ck.get("cols")            # 訓練時用的特徵子集，推論必須一致
         models = []
         for sd in ck["models"]:
             m = FeatureEmbedder(len(scaler.mu), embed_dim=a["embed_dim"], hidden=a["hidden"])
             m.load_state_dict(sd); m.eval().to(mdev)
             models.append(m)
-        metric = (models, scaler, mdev)
-        print(f"  使用度量學習 embedding（{len(models)} 個模型集成，device={mdev}）",
-              flush=True)
+        metric = (models, scaler, mdev, cols)
+        print(f"  使用度量學習 embedding（{len(models)} 個模型集成，"
+              f"{len(scaler.mu)} 維輸入，device={mdev}）", flush=True)
 
     all_qids, all_top5, all_truth = [], [], []
     for tag in ("public", "private"):
@@ -205,9 +206,11 @@ def main() -> int:
 
         if metric is not None:
             from aicup.feature_metric import embed_features, player_template
-            models, scaler, mdev = metric
+            models, scaler, mdev, cols = metric
 
             def make_tpl(A):
+                if cols is not None:
+                    A = np.asarray(A)[:, cols]
                 v = np.concatenate([player_template(embed_features(m, scaler, A, mdev))
                                     for m in models])
                 return v / max(float(np.linalg.norm(v)), 1e-8)

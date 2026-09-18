@@ -28,7 +28,8 @@ from aicup.data import load_metadata, make_player_split        # noqa: E402
 from aicup.benchmark import build_player_pool                  # noqa: E402
 from aicup.baselines import PlayerBaseline                     # noqa: E402
 from aicup.feature_metric import (FeatureEmbedder, FeatureScaler,   # noqa: E402
-                                  PKFeatureSampler, embed_features, player_template)
+                                  PKFeatureSampler, embed_features, player_template,
+                                  identity_feature_columns)
 from aicup.losses import SubCenterArcFace, batch_hard_triplet_loss  # noqa: E402
 from aicup.scoring import retrieval_report                     # noqa: E402
 
@@ -46,7 +47,7 @@ def pick_device(name: str):
 
 
 def evaluate(models, scaler, meta, split, X, ok, device, comps=("uniform",),
-             seeds: int = 2, stage2=None):
+             seeds: int = 2, stage2=None, cols=None):
     """多個模型的 embedding 串接後檢索。stage2 不為 None 時再套重排。"""
     out = {}
     for comp in comps:
@@ -58,6 +59,8 @@ def evaluate(models, scaler, meta, split, X, ok, device, comps=("uniform",),
 
             def tpl(rows):
                 A = np.asarray(X[rows[ok[rows]]])
+                if cols is not None:
+                    A = A[:, cols]
                 parts = [player_template(embed_features(m, scaler, A, device))
                          for m in models]
                 v = np.concatenate(parts)
@@ -115,6 +118,9 @@ def main() -> int:
     ap.add_argument("--device", default="auto")
     ap.add_argument("--stage2", default="cache/stage2/model.pkl")
     ap.add_argument("--eval-seeds", type=int, default=3)
+    ap.add_argument("--keep-global-position", action="store_true",
+                    help="保留 55 維的全局落子分布。預設拿掉——實測拿掉平均 +0.0161，"
+                         "5 種等級組成全為正（整局分布由棋局走勢決定，不是由人決定）")
     ap.add_argument("--out", default="cache/feature_metric")
     args = ap.parse_args()
 
@@ -135,7 +141,9 @@ def main() -> int:
     labels = np.array([p2l[p] for p in pid[tr]], dtype=np.int64)
     print(f"訓練局數 {len(tr):,}，身分 {len(players):,}", flush=True)
 
-    Xraw = np.asarray(X[tr])
+    cols = identity_feature_columns(drop_global_position=not args.keep_global_position)
+    print(f"特徵欄位 {len(cols)} / {X.shape[1]}", flush=True)
+    Xraw = np.asarray(X[tr])[:, cols]
     scaler = FeatureScaler().fit(Xraw)
     Xtr = scaler.transform(Xraw)
     sampler = PKFeatureSampler(labels, p=args.p, k=args.k, seed=0)
@@ -160,7 +168,7 @@ def main() -> int:
     for s in range(args.seeds):
         t0 = time.time()
         models.append(train_one(Xtr, labels, sampler, Xtr.shape[1], args, device, seed=s))
-        r = evaluate(models, scaler, meta, split, X, ok, device, seeds=args.eval_seeds)
+        r = evaluate(models, scaler, meta, split, X, ok, device, seeds=args.eval_seeds, cols=cols)
         print(f"  seed {s} 訓練完（{(time.time() - t0) / 60:.1f} 分）"
               f"→ 累計 {len(models)} 個模型集成：{r['uniform']:.4f}", flush=True)
 
@@ -172,9 +180,9 @@ def main() -> int:
     print("\n=== 各等級組成 ===", flush=True)
     print(f"{'組成':<10} {'無學習':>8} {'度量學習':>10} {'＋Stage-2':>11}", flush=True)
     r_learn = evaluate(models, scaler, meta, split, X, ok, device,
-                       comps=COMPS, seeds=args.eval_seeds)
+                       comps=COMPS, seeds=args.eval_seeds, cols=cols)
     r_rr = (evaluate(models, scaler, meta, split, X, ok, device, comps=COMPS,
-                     seeds=args.eval_seeds, stage2=stage2) if stage2 else {})
+                     seeds=args.eval_seeds, stage2=stage2, cols=cols) if stage2 else {})
     report = {}
     for comp in COMPS:
         sc = []
@@ -193,7 +201,7 @@ def main() -> int:
               f" {r_rr.get(comp, float('nan')):>11.4f}", flush=True)
 
     torch.save({"models": [m.state_dict() for m in models],
-                "scaler": scaler.state_dict(), "args": vars(args)},
+                "scaler": scaler.state_dict(), "cols": cols, "args": vars(args)},
                os.path.join(args.out, "models.pt"))
     with open(os.path.join(args.out, "report.json"), "w") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)

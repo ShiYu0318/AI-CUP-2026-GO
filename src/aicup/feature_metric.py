@@ -125,3 +125,30 @@ class PKFeatureSampler:
             idx.extend(int(x) for x in take)
             lab.extend([self.remap[l]] * self.k)
         return np.asarray(idx), np.asarray(lab, dtype=np.int64)
+
+
+# --------------------------------------------------------------------------
+# 特徵子集
+# --------------------------------------------------------------------------
+
+def identity_feature_columns(drop_global_position: bool = True) -> list[int]:
+    """回傳適合「玩家辨識」的特徵欄位索引。
+
+    實測（3 訓練 seed × 3 評估池 × 5 種等級組成，全為正）：
+    **把 55 維的「全局落子分布」(`all_cell*`) 拿掉，平均提升 +0.0161。**
+
+    | 組成 | 168 維 | 113 維（去掉全局分布） |
+    |---|---:|---:|
+    | uniform | 0.8317 | **0.8513** |
+    | natural | 0.8310 | 0.8413 |
+    | skewed | 0.7953 | 0.8122 |
+    | dan_only | 0.7837 | 0.8080 |
+    | kyu_only | 0.8912 | 0.9008 |
+
+    為什麼：**整局的落子分布主要由棋局走勢決定，不是由你決定；
+    而開局下哪裡是你的選擇。** 全局分布相對開局分布是冗餘且帶雜訊的。
+    """
+    from .features import FEATURE_NAMES
+    if not drop_global_position:
+        return list(range(len(FEATURE_NAMES)))
+    return [i for i, n in enumerate(FEATURE_NAMES) if not n.startswith("all_cell")]
