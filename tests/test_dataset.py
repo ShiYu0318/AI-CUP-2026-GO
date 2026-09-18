@@ -90,3 +90,23 @@ def test_question_game_count_within_official_range(meta, split):
     for i in range(10):
         x, _ = ds[i]
         assert 5 <= x.shape[0] <= 20
+
+
+def test_dataset_returns_quality_targets(meta, split):
+    """啟用棋形品質輔助目標時，資料集必須多回傳一個張量。"""
+    import numpy as np
+    from aicup.features import FEATURE_NAMES
+    rows = np.flatnonzero(split.mask(meta))[:3]
+    store = np.zeros((len(meta), len(FEATURE_NAMES)), dtype=np.float32)
+    cols = [FEATURE_NAMES.index("empty_triangle"), FEATURE_NAMES.index("wasted_fill")]
+    store[rows[0], cols] = [0.25, 0.5]
+
+    plain = GameDataset(meta, rows, n_snapshots=1, augment=False)
+    assert len(plain[0]) == 3
+
+    ds = GameDataset(meta, rows, n_snapshots=1, augment=False,
+                     quality_store=store, quality_cols=cols)
+    item = ds[0]
+    assert len(item) == 4
+    assert item[3].shape == (2,)
+    assert torch.allclose(item[3], torch.tensor([0.25, 0.5]))

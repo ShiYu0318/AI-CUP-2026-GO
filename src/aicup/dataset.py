@@ -60,13 +60,19 @@ class GameDataset(Dataset):
 
     def __init__(self, meta: pd.DataFrame, rows: np.ndarray, *,
                  training_dir: str = "training", n_snapshots: int = 8,
-                 augment: bool = True, player_to_label: dict | None = None):
+                 augment: bool = True, player_to_label: dict | None = None,
+                 quality_store: np.ndarray | None = None,
+                 quality_cols: list[int] | None = None):
         self.meta = meta
         self.rows = np.asarray(rows)
         self.cache = SgfCache(training_dir)
         self.n_snapshots = n_snapshots
         self.augment = augment
         self.player_to_label = player_to_label or {}
+        # 棋形品質的輔助回歸目標，直接取自已算好的特徵庫。
+        # 棋力標籤一局只有 1 個、訊號稀疏；這些連續量提供密集的監督訊號。
+        self.quality_store = quality_store
+        self.quality_cols = quality_cols or []
 
     def __len__(self) -> int:
         return len(self.rows)
@@ -80,9 +86,13 @@ class GameDataset(Dataset):
             t = np.zeros((1, 34, 19, 19), dtype=np.uint8)
         if self.augment:
             t = _dihedral(t, int(np.random.randint(8)))
-        return (torch.from_numpy(t.astype(np.float32)),
+        item = (torch.from_numpy(t.astype(np.float32)),
                 int(rec["rank_id"]),
                 int(self.player_to_label.get(rec["player_id"], -1)))
+        if self.quality_store is None:
+            return item
+        qual = np.asarray(self.quality_store[r][self.quality_cols], dtype=np.float32)
+        return item + (torch.from_numpy(qual),)
 
 
 class PKPlayerSampler(Sampler):

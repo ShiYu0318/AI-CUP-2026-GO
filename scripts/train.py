@@ -99,6 +99,9 @@ def main() -> int:
                          "實測未加時 arcface 損失量級 13~17、rank 只有 2.3，"
                          "rank head 在 3,000 步內幾乎沒學到東西")
     ap.add_argument("--balance-momentum", type=float, default=0.99)
+    ap.add_argument("--quality-weight", type=float, default=0.0,
+                    help="棋形品質輔助 head 的權重。>0 時會從 cache/features.npy 取"
+                         "愚形率等連續量當回歸目標，提供比 10 類棋力更密集的監督訊號")
     ap.add_argument("--out", default="cache/checkpoints")
     ap.add_argument("--smoke", action="store_true", help="極小設定，只驗證流程能跑通")
     args = ap.parse_args()
@@ -125,14 +128,25 @@ def main() -> int:
     class_counts = torch.tensor([counts[p] for p in players], dtype=torch.float)
     print(f"訓練局數 {len(train_rows):,}，訓練身分 {len(players):,}")
 
+    quality_store = quality_cols = None
+    if args.quality_weight > 0:
+        from aicup.features import FEATURE_NAMES
+        names = ["empty_triangle", "abandon_atari", "atari_given_rate",
+                 "wasted_fill", "contact_early", "cap_per_move"]
+        quality_cols = [FEATURE_NAMES.index(n) for n in names]
+        quality_store = np.load("cache/features.npy", mmap_mode="r")
+        print(f"棋形品質輔助目標 {len(quality_cols)} 維：{', '.join(names)}")
+
     ds = GameDataset(meta, train_rows, n_snapshots=args.snapshots, augment=True,
-                     player_to_label=p2l)
+                     player_to_label=p2l, quality_store=quality_store,
+                     quality_cols=quality_cols)
     sampler = PKPlayerSampler(meta, train_rows, p=args.p, k=args.k,
                               n_batches=args.steps, seed=0)
     loader = DataLoader(ds, batch_sampler=sampler, num_workers=args.workers)
 
     model = MultiTaskGoNet(in_channels=34, width=args.width, blocks=args.blocks,
-                           embed_dim=args.embed_dim, n_levels=N_LEVELS).to(device)
+                           embed_dim=args.embed_dim, n_levels=N_LEVELS,
+                           n_quality=len(quality_cols or [])).to(device)
     arc = SubCenterArcFace(args.embed_dim, len(players), k=3,
                            class_counts=class_counts).to(device)
     print(f"參數量 backbone {count_parameters(model):,} / arcface {count_parameters(arc):,}")
@@ -164,7 +178,12 @@ def main() -> int:
     t0 = time.time()
     model.train()
 
-    for step, (x, y_rank, y_player) in enumerate(loader, start=1):
+    for step, batch in enumerate(loader, start=1):
+        y_quality = None
+        if len(batch) == 4:
+            x, y_rank, y_player, y_quality = batch
+        else:
+            x, y_rank, y_player = batch
         # 一局多個 snapshot -> 攤平進 batch，標籤跟著複製
         B, S = x.shape[0], x.shape[1]
         x = x.flatten(0, 1).to(device)
@@ -179,6 +198,10 @@ def main() -> int:
         loss = (_balanced("rank", loss_rank)
                 + args.corn_weight * _balanced("corn", loss_corn)
                 + args.arcface_weight * _balanced("arc", loss_arc))
+        if y_quality is not None:
+            tgt = y_quality.repeat_interleave(S, dim=0).to(device)
+            loss_qual = F.smooth_l1_loss(out["quality"], tgt)
+            loss = loss + args.quality_weight * loss_qual
 
         opt.zero_grad(set_to_none=True)
         loss.backward()

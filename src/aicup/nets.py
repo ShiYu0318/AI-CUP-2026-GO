@@ -100,20 +100,28 @@ class MultiTaskGoNet(nn.Module):
     """
 
     def __init__(self, in_channels: int = 34, width: int = 128, blocks: int = 10,
-                 embed_dim: int = 512, n_levels: int = 10):
+                 embed_dim: int = 512, n_levels: int = 10, n_quality: int = 0):
         super().__init__()
         self.trunk = GoTrunk(in_channels, width, blocks, embed_dim)
         self.rank_head = nn.Linear(embed_dim, n_levels)
         self.corn_head = nn.Linear(embed_dim, n_levels - 1)
         self.set_pool = AttentionPool(embed_dim)
+        # 棋形品質輔助 head：顯式回歸「愚形率、棄子率、官子填地率…」等
+        # 已知與棋力高度相關的量（愚形的相關係數達 -0.964）。
+        # 棋力標籤一局只有 1 個、訊號稀疏；這些連續量提供密集的監督訊號，
+        # 思路同 KataGo 的 ownership/score 輔助目標（arXiv:1902.10565）。
+        self.quality_head = nn.Linear(embed_dim, n_quality) if n_quality else None
 
     def forward(self, x):
         metric, cls = self.trunk(x)
-        return {
+        out = {
             "embedding": metric,
             "rank_logits": self.rank_head(cls),
             "corn_logits": self.corn_head(cls),
         }
+        if self.quality_head is not None:
+            out["quality"] = self.quality_head(cls)
+        return out
 
     def forward_set(self, x, mask=None):
         """x: (B, N, C, 19, 19) —— 一題的 N 局棋，聚合後再出題目層級預測。"""

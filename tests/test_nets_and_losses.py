@@ -180,3 +180,32 @@ def test_multitask_backward():
 def test_parameter_count_is_reported():
     net = MultiTaskGoNet(width=64, blocks=4, embed_dim=256)
     assert count_parameters(net) > 0
+
+
+# ---- 棋形品質輔助 head ----
+
+def test_quality_head_absent_by_default():
+    net = MultiTaskGoNet(width=16, blocks=1, embed_dim=32)
+    net.eval()
+    assert "quality" not in net(torch.randn(2, 34, 19, 19))
+
+
+def test_quality_head_shape_when_enabled():
+    net = MultiTaskGoNet(width=16, blocks=1, embed_dim=32, n_quality=5)
+    net.eval()
+    out = net(torch.randn(3, 34, 19, 19))
+    assert out["quality"].shape == (3, 5)
+
+
+def test_quality_head_is_differentiable():
+    net = MultiTaskGoNet(width=16, blocks=1, embed_dim=32, n_quality=4)
+    out = net(torch.randn(4, 34, 19, 19))
+    out["quality"].sum().backward()
+    assert net.quality_head.weight.grad is not None
+
+
+def test_quality_head_does_not_break_set_forward():
+    net = MultiTaskGoNet(width=16, blocks=1, embed_dim=32, n_quality=3)
+    net.eval()
+    out = net.forward_set(torch.randn(2, 5, 34, 19, 19))
+    assert out["rank_logits"].shape == (2, 10)
