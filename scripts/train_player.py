@@ -142,6 +142,10 @@ def main() -> int:
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--pool", default="set_transformer", choices=["attention", "set_transformer"])
     ap.add_argument("--no-global-pool-bias", action="store_true")
+    ap.add_argument("--transformer-every", type=int, default=0,
+                    help="每 N 個 residual block 插一個盤面 self-attention（ResTNet）。\n"
+                         "純卷積抓不到征子/環形等長程 pattern，而那正是區分棋力的關鍵。\n"
+                         "0 = 停用；建議從 3 開始。成本約 +1.5 倍 forward 時間")
     ap.add_argument("--out", default="cache/ckpt_player")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--smoke", action="store_true")
@@ -181,7 +185,8 @@ def main() -> int:
 
     model = MultiTaskGoNet(in_channels=34, width=args.width, blocks=args.blocks,
                            embed_dim=args.embed_dim, pool=args.pool,
-                           global_pool_bias=not args.no_global_pool_bias).to(device)
+                           global_pool_bias=not args.no_global_pool_bias,
+                           transformer_every=args.transformer_every).to(device)
     arc = SubCenterArcFace(args.embed_dim, len(players), k=args.arcface_k,
                            scale=args.arcface_scale, class_counts=class_counts).to(device)
     print(f"參數量 backbone {count_parameters(model):,} / arcface {count_parameters(arc):,}",

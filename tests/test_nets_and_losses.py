@@ -209,3 +209,48 @@ def test_quality_head_does_not_break_set_forward():
     net.eval()
     out = net.forward_set(torch.randn(2, 5, 34, 19, 19))
     assert out["rank_logits"].shape == (2, 10)
+
+
+# ---- ResTNet 盤面編碼 ----
+
+def test_board_transformer_preserves_shape():
+    from aicup.nets import BoardTransformerBlock
+    b = BoardTransformerBlock(32)
+    x = torch.randn(2, 32, 19, 19)
+    assert b(x).shape == x.shape
+
+
+def test_board_transformer_is_differentiable():
+    from aicup.nets import BoardTransformerBlock
+    b = BoardTransformerBlock(16)
+    x = torch.randn(2, 16, 19, 19, requires_grad=True)
+    b(x).sum().backward()
+    assert x.grad is not None and torch.isfinite(x.grad).all()
+
+
+def test_board_transformer_mixes_distant_positions():
+    """自注意力必須讓遠處的落子影響本處——這是純卷積做不到的。"""
+    from aicup.nets import BoardTransformerBlock
+    torch.manual_seed(0)
+    b = BoardTransformerBlock(8).eval()
+    x = torch.zeros(1, 8, 19, 19)
+    with torch.no_grad():
+        base = b(x)[0, :, 0, 0].clone()
+        x[0, :, 18, 18] = 5.0                    # 只改對角最遠的點
+        moved = b(x)[0, :, 0, 0]
+    assert not torch.allclose(base, moved, atol=1e-5)
+
+
+def test_trunk_with_transformer_blocks_has_more_params():
+    from aicup.nets import GoTrunk, count_parameters
+    a = GoTrunk(34, 32, 6, 128, transformer_every=0)
+    b = GoTrunk(34, 32, 6, 128, transformer_every=3)
+    assert count_parameters(b) > count_parameters(a)
+
+
+def test_multitask_with_transformer_every_forward():
+    net = MultiTaskGoNet(width=16, blocks=4, embed_dim=32, transformer_every=2)
+    net.eval()
+    out = net(torch.randn(3, 34, 19, 19))
+    assert out["rank_logits"].shape == (3, 10)
+    assert torch.isfinite(out["embedding"]).all()

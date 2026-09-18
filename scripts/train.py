@@ -102,6 +102,14 @@ def main() -> int:
     ap.add_argument("--quality-weight", type=float, default=0.0,
                     help="棋形品質輔助 head 的權重。>0 時會從 cache/features.npy 取"
                          "愚形率等連續量當回歸目標，提供比 10 類棋力更密集的監督訊號")
+    ap.add_argument("--pool", default="set_transformer",
+                    choices=["attention", "set_transformer"],
+                    help="集合聚合方式。set_transformer 讓多局互相參照"
+                         "（ICLR 2025 圍棋棋力 SOTA 的做法）")
+    ap.add_argument("--transformer-every", type=int, default=0,
+                    help="每 N 個 residual block 插一個盤面 self-attention（ResTNet）。\n"
+                         "純卷積抓不到征子/環形等長程 pattern，而那正是區分棋力的關鍵。\n"
+                         "0 = 停用；建議從 3 開始。成本約 +1.5 倍 forward 時間")
     ap.add_argument("--out", default="cache/checkpoints")
     ap.add_argument("--resume", action="store_true",
                     help="從 --out 的 last.pt 續訓。Colab / Kaggle 的 session 會斷線，"
@@ -155,7 +163,9 @@ def main() -> int:
 
     model = MultiTaskGoNet(in_channels=34, width=args.width, blocks=args.blocks,
                            embed_dim=args.embed_dim, n_levels=N_LEVELS,
-                           n_quality=len(quality_cols or [])).to(device)
+                           n_quality=len(quality_cols or []),
+                           pool=args.pool,
+                           transformer_every=args.transformer_every).to(device)
     arc = SubCenterArcFace(args.embed_dim, len(players), k=3,
                            class_counts=class_counts).to(device)
     print(f"參數量 backbone {count_parameters(model):,} / arcface {count_parameters(arc):,}")

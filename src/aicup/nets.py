@@ -74,6 +74,46 @@ class ResBlockGPB(nn.Module):
         return F.relu(out + x)
 
 
+class BoardTransformerBlock(nn.Module):
+    """把 19x19 當成 361 個 token 的 self-attention 區塊（ResTNet 的作法）。
+
+    純卷積的感受野隨深度線性成長，抓不到征子（ladder）、環形（cycle）這類
+    需要沿著長路徑推理的 pattern —— 而那正是區分棋力的關鍵。
+    [ResTNet, IJCAI 2025](https://arxiv.org/abs/2410.05347) 的做法是把
+    residual block 與 transformer block **交錯堆疊**：
+    19x19 圍棋勝率 53.6% -> 60.9%，環形 pattern 的 MSE 2.58 -> 1.07。
+
+    361 個 token 的 self-attention 在 19x19 上是可負擔的
+    （相較影像的數千 token 小得多）。
+    """
+
+    def __init__(self, channels: int, heads: int = 4, mlp_ratio: int = 2):
+        super().__init__()
+        self.heads = heads
+        self.norm1 = nn.LayerNorm(channels)
+        self.qkv = nn.Linear(channels, channels * 3)
+        self.proj = nn.Linear(channels, channels)
+        self.norm2 = nn.LayerNorm(channels)
+        self.mlp = nn.Sequential(
+            nn.Linear(channels, channels * mlp_ratio), nn.GELU(),
+            nn.Linear(channels * mlp_ratio, channels))
+        # 可學的位置編碼：圍棋盤面的角、邊、中腹性質差很多，位置資訊必須保留
+        self.pos = nn.Parameter(torch.zeros(1, 19 * 19, channels))
+        nn.init.trunc_normal_(self.pos, std=0.02)
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        t = x.flatten(2).transpose(1, 2) + self.pos          # (B, 361, C)
+        h = self.norm1(t)
+        qkv = self.qkv(h).view(B, H * W, 3, self.heads, C // self.heads)
+        q, k, v = qkv.permute(2, 0, 3, 1, 4)
+        a = F.scaled_dot_product_attention(q, k, v)
+        a = a.transpose(1, 2).reshape(B, H * W, C)
+        t = t + self.proj(a)
+        t = t + self.mlp(self.norm2(t))
+        return t.transpose(1, 2).view(B, C, H, W)
+
+
 class MAB(nn.Module):
     """Multihead Attention Block（Set Transformer, arXiv:1810.00825）。"""
 
@@ -153,16 +193,22 @@ class GoTrunk(nn.Module):
 
     def __init__(self, in_channels: int = 34, width: int = 128, blocks: int = 10,
                  embed_dim: int = 512, global_pool_bias: bool = True,
-                 gpb_every: int = 2):
+                 gpb_every: int = 2, transformer_every: int = 0):
         super().__init__()
         self.stem = nn.Sequential(
             nn.Conv2d(in_channels, width, 3, padding=1, bias=False),
             nn.BatchNorm2d(width), nn.ReLU(inplace=True))
-        # 每 gpb_every 個區塊插一個帶 global pooling bias 的版本（KataGo 的做法）
-        self.blocks = nn.Sequential(*[
-            ResBlockGPB(width) if (global_pool_bias and (i + 1) % gpb_every == 0)
-            else ResBlock(width)
-            for i in range(blocks)])
+        # 每 gpb_every 個區塊插一個帶 global pooling bias 的版本（KataGo 的做法），
+        # 每 transformer_every 個區塊插一個盤面 self-attention（ResTNet 的做法）
+        layers = []
+        for i in range(blocks):
+            if global_pool_bias and (i + 1) % gpb_every == 0:
+                layers.append(ResBlockGPB(width))
+            else:
+                layers.append(ResBlock(width))
+            if transformer_every and (i + 1) % transformer_every == 0:
+                layers.append(BoardTransformerBlock(width))
+        self.blocks = nn.Sequential(*layers)
         self.pool = GeM()
         self.proj = nn.Linear(width, embed_dim)
         self.bn_neck = nn.BatchNorm1d(embed_dim)
@@ -206,10 +252,12 @@ class MultiTaskGoNet(nn.Module):
 
     def __init__(self, in_channels: int = 34, width: int = 128, blocks: int = 10,
                  embed_dim: int = 512, n_levels: int = 10, n_quality: int = 0,
-                 pool: str = "set_transformer", global_pool_bias: bool = True):
+                 pool: str = "set_transformer", global_pool_bias: bool = True,
+                 transformer_every: int = 0):
         super().__init__()
         self.trunk = GoTrunk(in_channels, width, blocks, embed_dim,
-                             global_pool_bias=global_pool_bias)
+                             global_pool_bias=global_pool_bias,
+                             transformer_every=transformer_every)
         self.rank_head = nn.Linear(embed_dim, n_levels)
         self.corn_head = nn.Linear(embed_dim, n_levels - 1)
         # 集合聚合：set_transformer 讓集合內元素互相參照（ICLR 2025 圍棋棋力 SOTA 的做法）；
