@@ -103,6 +103,11 @@ def main() -> int:
                     help="棋形品質輔助 head 的權重。>0 時會從 cache/features.npy 取"
                          "愚形率等連續量當回歸目標，提供比 10 類棋力更密集的監督訊號")
     ap.add_argument("--out", default="cache/checkpoints")
+    ap.add_argument("--resume", action="store_true",
+                    help="從 --out 的 last.pt 續訓。Colab / Kaggle 的 session 會斷線，"
+                         "長訓練一定要開這個")
+    ap.add_argument("--save-every", type=int, default=500,
+                    help="每 N 步存一次 last.pt（含 optimizer 與 scheduler 狀態）")
     ap.add_argument("--smoke", action="store_true", help="極小設定，只驗證流程能跑通")
     args = ap.parse_args()
 
@@ -174,11 +179,31 @@ def main() -> int:
 
     questions = build_rank_questions(meta, split, n_per_player=1, seed=0,
                                      max_questions=8 if args.smoke else args.eval_questions)
-    history, best = [], -1.0
+    history, best, start_step = [], -1.0, 0
+
+    last_path = os.path.join(args.out, "last.pt")
+    if args.resume and os.path.exists(last_path):
+        ck = torch.load(last_path, map_location=device, weights_only=False)
+        model.load_state_dict(ck["model"])
+        arc.load_state_dict(ck["arc"])
+        opt.load_state_dict(ck["opt"])
+        # ⚠️ 不能直接 load_state_dict：OneCycleLR 的 state 內含建構時的 total_steps，
+        # 還原後會把上限鎖回上一次的步數，續訓第一步就丟
+        # "Tried to step N times. The specified number of total steps is M"。
+        # 只還原「已走到第幾步」，總步數維持這次 --steps 指定的值。
+        sched.last_epoch = int(ck["sched"]["last_epoch"])
+        sched._step_count = int(ck["sched"].get("_step_count", sched.last_epoch + 1))
+        history, best, start_step = ck["history"], ck["best"], ck["step"]
+        print(f"從 {last_path} 續訓：已完成 {start_step:,} 步，最佳分數 {best:.4f}")
+        if start_step >= args.steps:
+            print("已達到指定步數，無需續訓。")
+            return 0
+        sampler.n_batches = args.steps - start_step
+
     t0 = time.time()
     model.train()
 
-    for step, batch in enumerate(loader, start=1):
+    for step, batch in enumerate(loader, start=start_step + 1):
         y_quality = None
         if len(batch) == 4:
             x, y_rank, y_player, y_quality = batch
@@ -227,6 +252,13 @@ def main() -> int:
                 torch.save({"model": model.state_dict(), "args": vars(args),
                             "score": best},
                            os.path.join(args.out, "best.pt"))
+
+        if step % max(1, args.save_every) == 0 or step == args.steps:
+            # 續訓用的完整狀態。Colab 斷線後 --resume 可從這裡接回去。
+            torch.save({"model": model.state_dict(), "arc": arc.state_dict(),
+                        "opt": opt.state_dict(), "sched": sched.state_dict(),
+                        "step": step, "best": best, "history": history,
+                        "args": vars(args)}, last_path)
 
     with open(os.path.join(args.out, "history.json"), "w") as f:
         json.dump(history, f, indent=2)
