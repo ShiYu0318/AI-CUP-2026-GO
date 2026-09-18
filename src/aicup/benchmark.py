@@ -60,9 +60,27 @@ class PlayerPool:
         return len(self.players)
 
 
+# 玩家 -> 列索引 的全表索引快取。
+# 建立候選庫時每次都對 100 萬列做一次 isin + groupby 相當慢，
+# 而同一份 metadata 在一輪實驗中會被重複使用數十次（5 種組成 x 多個 seed）。
+_ROWS_CACHE: dict[int, dict[str, np.ndarray]] = {}
+
+
+def player_row_index(meta: pd.DataFrame) -> dict[str, np.ndarray]:
+    """建立（並快取）整份 metadata 的 player_id -> 列索引對照表。"""
+    key = id(meta)
+    cached = _ROWS_CACHE.get(key)
+    if cached is None:
+        cached = {pid: g.index.to_numpy()
+                  for pid, g in meta.groupby("player_id", sort=False)}
+        _ROWS_CACHE.clear()          # 只保留最近一份，避免在長流程中累積記憶體
+        _ROWS_CACHE[key] = cached
+    return cached
+
+
 def _player_rows(meta: pd.DataFrame, players) -> dict[str, np.ndarray]:
-    sub = meta[meta["player_id"].isin(players)]
-    return {pid: g.index.to_numpy() for pid, g in sub.groupby("player_id")}
+    index = player_row_index(meta)
+    return {pid: index[pid] for pid in players if pid in index}
 
 
 def build_rank_questions(meta: pd.DataFrame, split: PlayerSplit, *,
