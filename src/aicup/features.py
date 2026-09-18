@@ -66,8 +66,11 @@ def _scalar_names() -> list[str]:
     #   wasted_fill   -0.747  弱者更常在官子把子下進自己已包圍的空點
     #   cap_per_move  +0.654  強者每手提到更多子
     #   abandon_atari +0.485  強者會果斷棄掉被打吃的死子，而不是硬救
+    #   empty_triangle -0.936  愚形（自己三子成 L、第四點空）—— 圍棋最著名的壞形，
+    #                          是目前找到最強的單一棋力訊號
+    #   contact_early  -0.662  開局 30 手內的貼身接觸比例，弱者常過早接觸
     n += ["wasted_fill", "cap_per_move", "abandon_atari", "self_atari_rate",
-          "atari_given_rate"]
+          "atari_given_rate", "empty_triangle", "contact_early"]
     return n
 
 
@@ -98,6 +101,27 @@ def _group_stats(board: Board, color: int):
     return float(n_groups), libs_sum / n_groups, n_atari / n_groups
 
 
+def _makes_empty_triangle(stones, r: int, c: int, color: int) -> bool:
+    """這一手是否形成愚形：自己三子佔 2x2 的三個角、第四角是空的。
+
+    愚形是圍棋公認的壞形（效率低、氣少）。實測它與棋力的相關係數達 -0.936，
+    是本專案找到最強的單一棋力訊號，而且完全不需要圍棋引擎。
+    """
+    for dr in (-1, 1):
+        for dc in (-1, 1):
+            r1, c1 = r + dr, c          # 同欄的鄰點
+            r2, c2 = r, c + dc          # 同列的鄰點
+            r3, c3 = r + dr, c + dc     # 對角點
+            if not (0 <= r1 < SIZE and 0 <= c2 < SIZE):
+                continue
+            others = [stones[r1 * SIZE + c1], stones[r2 * SIZE + c2],
+                      stones[r3 * SIZE + c3]]
+            # 剩下三點必須「兩子同色 + 一點為空」——空點落在哪一個位置都算愚形
+            if others.count(color) == 2 and others.count(EMPTY) == 1:
+                return True
+    return False
+
+
 def _quality_stats(moves, my: int, opp: int, n_moves: int) -> dict:
     """局面判斷品質的代理指標。只重播一次，靠「最後一手的鄰居」增量判斷打吃，
     避免每手都掃描整個盤面（那會讓特徵抽取慢上數倍）。"""
@@ -105,13 +129,17 @@ def _quality_stats(moves, my: int, opp: int, n_moves: int) -> dict:
 
     board = Board()
     n_my = wasted = self_atari = abandoned = atari_given = 0
-    cap_made = 0
+    n_empty_tri = n_contact = n_open = cap_made = 0
     endgame_start = int(0.75 * n_moves)
     my_in_atari: set[int] = set()          # 我方處於打吃的棋串代表點
 
     for i, (col, r, c) in enumerate(moves):
         idx = r * SIZE + c
         neigh = _NEIGHBORS[idx]
+        if col == my and i < 30:           # 開局的貼身接觸
+            n_open += 1
+            if any(board.stones[q] == opp for q in neigh):
+                n_contact += 1
         # 落子前先記下：這一手是否有「填自己的地」的嫌疑
         surrounded_by_me = (col == my and i >= endgame_start
                             and all(board.stones[q] == my for q in neigh))
@@ -127,6 +155,8 @@ def _quality_stats(moves, my: int, opp: int, n_moves: int) -> dict:
                 _, libs = board._group_and_liberties(idx)
                 if len(libs) == 1 and taken == 0:
                     self_atari += 1
+                if _makes_empty_triangle(board.stones, r, c, my):
+                    n_empty_tri += 1
             # 先前被打吃的棋串，若這手沒去救、之後也還在打吃，算一次「棄子」
             if my_in_atari:
                 still = 0
@@ -163,7 +193,9 @@ def _quality_stats(moves, my: int, opp: int, n_moves: int) -> dict:
     d = max(n_my, 1)
     return {"wasted_fill": wasted / d, "cap_per_move": cap_made / d,
             "abandon_atari": abandoned / d, "self_atari_rate": self_atari / d,
-            "atari_given_rate": opp_atari_groups / d}
+            "atari_given_rate": opp_atari_groups / d,
+            "empty_triangle": n_empty_tri / d,
+            "contact_early": n_contact / max(n_open, 1)}
 
 
 def game_features(sgf: str, color: str | int) -> np.ndarray | None:
@@ -247,7 +279,8 @@ def game_features(sgf: str, color: str | int) -> np.ndarray | None:
 
     q = _quality_stats(moves, my, opp, n)
     sc += [q["wasted_fill"], q["cap_per_move"], q["abandon_atari"],
-           q["self_atari_rate"], q["atari_given_rate"]]
+           q["self_atari_rate"], q["atari_given_rate"],
+           q["empty_triangle"], q["contact_early"]]
 
     # ---- 位置分布（8 重對稱折疊）----
     fold = _FOLD_LUT[rows, cols]

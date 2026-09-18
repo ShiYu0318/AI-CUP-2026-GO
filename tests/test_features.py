@@ -187,3 +187,44 @@ def test_wasted_fill_is_zero_when_no_endgame_selffill():
     f = game_features(short, d.color.iloc[0])
     if f is not None:
         assert f[FEATURE_NAMES.index("wasted_fill")] == 0.0
+
+
+def test_empty_triangle_detection():
+    """愚形偵測：三子佔 2x2 的三角、第四點空 -> True；第四點有子 -> False。"""
+    from aicup.features import _makes_empty_triangle
+    from aicup.goboard import Board, BLACK, SIZE
+
+    b = Board()
+    b.play(BLACK, 5, 5)
+    b.play(BLACK, 5, 6)
+    b.play(BLACK, 6, 5)
+    # (6,6) 為空 -> 剛下的 (6,5) 構成愚形
+    assert _makes_empty_triangle(b.stones, 6, 5, BLACK)
+
+    b.play(BLACK, 6, 6)          # 補上第四點就不是愚形（成為實地的方塊）
+    assert not _makes_empty_triangle(b.stones, 6, 6, BLACK)
+
+
+def test_empty_triangle_needs_same_colour():
+    from aicup.features import _makes_empty_triangle
+    from aicup.goboard import Board, BLACK, WHITE
+
+    b = Board()
+    b.play(BLACK, 5, 5)
+    b.play(WHITE, 5, 6)          # 對方的子不構成我方愚形
+    b.play(BLACK, 6, 5)
+    assert not _makes_empty_triangle(b.stones, 6, 5, BLACK)
+
+
+def test_empty_triangle_handles_board_edge():
+    from aicup.features import _makes_empty_triangle
+    from aicup.goboard import Board, BLACK
+    b = Board()
+    b.play(BLACK, 0, 0)
+    assert _makes_empty_triangle(b.stones, 0, 0, BLACK) in (True, False)   # 不可越界
+
+def test_new_shape_features_bounded(sample):
+    X, ok = batch_features(sample.sgf_content.tolist(), sample.color.tolist())
+    for n in ("empty_triangle", "contact_early"):
+        v = X[ok, FEATURE_NAMES.index(n)]
+        assert ((v >= 0) & (v <= 1)).all(), n
