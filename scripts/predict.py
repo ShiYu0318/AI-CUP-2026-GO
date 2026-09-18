@@ -31,7 +31,8 @@ from aicup.features import batch_features, parallel_batch_features  # noqa: E402
 from aicup.baselines import RankBaseline, PlayerBaseline       # noqa: E402
 from aicup.scoring import (apply_temperature, decode_expected_score,   # noqa: E402
                            rank_final_score, top_k_from_similarity,
-                           player_final_score)
+                           player_final_score, fit_temperature,
+                           optimise_thresholds, apply_thresholds, expected_level)
 from aicup.submission import (build_rank_submission, build_player_submission,  # noqa: E402
                               write_submission)
 
@@ -97,6 +98,10 @@ def main() -> int:
     ap.add_argument("--temperature", type=float, default=0.5,
                     help="題目後驗的溫度；<1 為銳化。實測最佳 0.5~0.6")
     ap.add_argument("--aggregation", default="logmean", choices=["mean", "logmean"])
+    ap.add_argument("--decode", default="threshold",
+                    choices=["threshold", "expected", "argmax"],
+                    help="解碼方式。實測（5 次獨立切分）：最佳化切點 0.4336±0.0032 > "
+                         "期望分數解碼 0.3921±0.0099 > argmax 0.3886±0.0086")
     args = ap.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -111,6 +116,27 @@ def main() -> int:
     print("競賽二：棋力預測", flush=True)
     print("=" * 60, flush=True)
     model = _fit_rank_model("cache/rank_model.pkl", args.train_per_rank)
+
+    # 切點與溫度都在「held-out 玩家的模擬題目」上校準，與測試集完全無關
+    calib = None
+    if args.decode == "threshold":
+        from aicup.data import make_player_split as _mps
+        from aicup.benchmark import build_rank_questions as _brq
+        _X = np.load("cache/features.npy", mmap_mode="r")
+        _ok = np.load("cache/features_ok.npy")
+        _meta = load_metadata()
+        _sp = _mps(_meta, val_frac=0.20, seed=42)
+        _q = _brq(_meta, _sp, n_per_player=3, seed=0)
+        _P = model.question_proba(
+            [np.asarray(_X[r[_ok[r]]]) for r in _q.game_rows], args.aggregation)
+        _lo = np.log(np.clip(_P, 1e-12, None))
+        _T = fit_temperature(_lo, _q.true_rank_id)
+        _th = optimise_thresholds(
+            expected_level(apply_temperature(_lo, _T)), _q.true_rank_id)
+        calib = (_T, _th)
+        print(f"  切點校準完成（{len(_q.true_rank_id)} 題）："
+              f"T={_T:.2f}, 切點={np.round(_th, 2).tolist()}", flush=True)
+
     qids, preds, truth = [], [], []
     for tag in ("public", "private"):
         path = os.path.join(args.test_dir, f"rank_prediction_test_{tag}.csv")
@@ -118,8 +144,14 @@ def main() -> int:
         t0 = time.time()
         feats = _question_features(df)
         P = model.question_proba(feats, how=args.aggregation)
-        P = apply_temperature(np.log(np.clip(P, 1e-12, None)), args.temperature)
-        pred = decode_expected_score(P)
+        lo = np.log(np.clip(P, 1e-12, None))
+        if args.decode == "threshold":
+            T, th = calib
+            pred = apply_thresholds(expected_level(apply_temperature(lo, T)), th)
+        elif args.decode == "expected":
+            pred = decode_expected_score(apply_temperature(lo, args.temperature))
+        else:
+            pred = apply_temperature(lo, args.temperature).argmax(axis=-1)
         qids.extend(df["question_id"].tolist()); preds.extend(pred.tolist())
         truth.extend([answers["rank"].get(q) for q in df["question_id"]])
         print(f"  {tag:<8} {len(df)} 題，{time.time() - t0:.0f} 秒", flush=True)

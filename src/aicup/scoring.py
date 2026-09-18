@@ -150,3 +150,54 @@ def retrieval_report(sim: np.ndarray, true_col: np.ndarray | None = None) -> dic
         "median_rank": float(np.median(ranks) + 1),
         "n_query": int(len(ranks)),
     }
+
+
+# --------------------------------------------------------------------------
+# 序數回歸：把棋力當連續量預測，再最佳化切點
+# --------------------------------------------------------------------------
+
+def optimise_thresholds(scores, true_idx, n_levels: int = N_LEVELS,
+                        n_restarts: int = 12, seed: int = 0) -> np.ndarray:
+    """在 OOF 上直接最佳化 n_levels-1 個切點，使**官方分數**最大。
+
+    這是 QWK 類競賽的標準做法（OptimizedRounder），但目標函數換成本競賽的
+    「完全正確 1、相鄰一級 exp(-1)」——直接最佳化要被評分的東西，
+    而不是 accuracy 或 MSE。
+
+    scores: 連續預測值（越大代表棋力越強）
+    回傳：長度 n_levels-1 的遞增切點
+    """
+    from scipy.optimize import minimize
+
+    scores = np.asarray(scores, dtype=np.float64)
+    true_idx = np.asarray(true_idx)
+
+    def decode(th):
+        return np.searchsorted(np.sort(th), scores)
+
+    def neg_score(th):
+        return -rank_final_score(decode(th), true_idx)
+
+    rng = np.random.default_rng(seed)
+    qs = np.quantile(scores, np.linspace(0, 1, n_levels + 1)[1:-1])
+    best_th, best = qs.copy(), -neg_score(qs)
+    for r in range(n_restarts):
+        init = qs if r == 0 else np.sort(qs + rng.normal(scale=scores.std() * 0.3,
+                                                         size=len(qs)))
+        res = minimize(neg_score, init, method="Nelder-Mead",
+                       options={"maxiter": 2000, "xatol": 1e-4, "fatol": 1e-6})
+        if -res.fun > best:
+            best, best_th = -res.fun, np.sort(res.x)
+    return np.sort(best_th)
+
+
+def apply_thresholds(scores, thresholds) -> np.ndarray:
+    """用切點把連續分數轉成等級索引。"""
+    return np.searchsorted(np.sort(np.asarray(thresholds)),
+                           np.asarray(scores, dtype=np.float64))
+
+
+def expected_level(probs: np.ndarray) -> np.ndarray:
+    """由後驗機率算期望等級（連續值）。可餵給 optimise_thresholds。"""
+    probs = np.asarray(probs, dtype=np.float64)
+    return probs @ np.arange(probs.shape[-1], dtype=np.float64)

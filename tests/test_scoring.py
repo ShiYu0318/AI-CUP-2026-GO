@@ -286,3 +286,45 @@ def test_stacking_blender_roundtrip():
     assert p.shape == (200, 3)
     assert np.allclose(p.sum(1), 1.0)
     assert (p.argmax(1) == y).mean() > 0.8
+
+
+# ---------------- 序數回歸 + 最佳化切點 ----------------
+
+def test_apply_thresholds_maps_to_levels():
+    from aicup.scoring import apply_thresholds
+    th = [0.5, 1.5, 2.5]
+    assert list(apply_thresholds([0.0, 1.0, 2.0, 9.0], th)) == [0, 1, 2, 3]
+
+
+def test_apply_thresholds_sorts_input():
+    from aicup.scoring import apply_thresholds
+    a = apply_thresholds([1.2], [2.5, 0.5, 1.5])
+    b = apply_thresholds([1.2], [0.5, 1.5, 2.5])
+    assert a == b
+
+
+def test_expected_level_matches_manual():
+    from aicup.scoring import expected_level
+    p = np.zeros((2, 10)); p[0, 3] = 1.0; p[1, 2] = p[1, 4] = 0.5
+    assert np.allclose(expected_level(p), [3.0, 3.0])
+
+
+def test_optimise_thresholds_returns_sorted_and_right_length():
+    from aicup.scoring import optimise_thresholds
+    rng = np.random.default_rng(0)
+    y = rng.integers(0, 10, 500)
+    s = y + rng.normal(scale=1.0, size=500)
+    th = optimise_thresholds(s, y, n_restarts=3)
+    assert len(th) == 9
+    assert (np.diff(th) >= 0).all()
+
+
+def test_optimise_thresholds_beats_naive_on_shifted_scores():
+    """分數被壓縮/平移時，最佳化切點必須勝過直接四捨五入。"""
+    from aicup.scoring import optimise_thresholds, apply_thresholds
+    rng = np.random.default_rng(1)
+    y = rng.integers(0, 10, 2000)
+    s = 2.0 + 0.4 * y + rng.normal(scale=0.3, size=2000)     # 刻意壓縮到 2~6
+    naive = np.clip(np.round(s), 0, 9).astype(int)
+    th = optimise_thresholds(s, y, n_restarts=4)
+    assert rank_final_score(apply_thresholds(s, th), y) > rank_final_score(naive, y)
