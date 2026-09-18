@@ -13,10 +13,10 @@
 from __future__ import annotations
 
 import argparse
+import multiprocessing as mp
 import os
 import sys
 import time
-from multiprocessing import Pool
 
 import numpy as np
 import pandas as pd
@@ -46,12 +46,19 @@ def main() -> int:
     ap.add_argument("--training-dir", default="training")
     args = ap.parse_args()
 
+    # macOS 的 Python 3.13 預設用 spawn，每個 worker 都要重新 import 並可能卡住。
+    # 本工作是純數值運算、沒有持有執行緒，用 fork 既安全又省下重複 import 的成本。
+    try:
+        ctx = mp.get_context("fork")
+    except ValueError:                       # 不支援 fork 的平台（Windows）
+        ctx = mp.get_context("spawn")
+
     os.makedirs(CACHE_DIR, exist_ok=True)
     files = training_files(args.training_dir)
     jobs = [(i, p, args.limit) for i, p in enumerate(files)]
 
     t0 = time.time()
-    with Pool(min(args.nproc, len(jobs))) as pool:
+    with ctx.Pool(min(args.nproc, len(jobs))) as pool:
         for fi, n, n_ok, el in pool.imap_unordered(_worker, jobs):
             print(f"  [{os.path.basename(files[fi]):>16}] {n:,} 局，成功 {n_ok:,}"
                   f"（{n_ok / max(n,1):.4f}），{el / 60:.1f} 分", flush=True)
