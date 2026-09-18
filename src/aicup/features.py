@@ -195,3 +195,40 @@ def batch_features(sgfs, colors) -> tuple[np.ndarray, np.ndarray]:
             out[i] = v
             ok[i] = True
     return out, ok
+
+
+def _chunk_worker(args):
+    sgfs, colors = args
+    return batch_features(sgfs, colors)
+
+
+def parallel_batch_features(sgfs, colors, nproc: int | None = None, chunk: int = 2000):
+    """多進程版的 batch_features。
+
+    正式比賽當天要處理的候選庫是 2 池 x 40,000 局，單執行緒約 3 分鐘；
+    10 核可降到 20 秒左右。
+
+    ⚠️ macOS 的 Python 3.13 預設用 spawn，worker 可能起不來（實測會卡住），
+    所以這裡明確要求 fork；不支援時退回單進程，行為完全相同。
+    """
+    import multiprocessing as mp
+    import os
+
+    n = len(sgfs)
+    if nproc is None:
+        nproc = min(os.cpu_count() or 1, 10)
+    if nproc <= 1 or n <= chunk:
+        return batch_features(sgfs, colors)
+
+    try:
+        ctx = mp.get_context("fork")
+    except ValueError:
+        return batch_features(sgfs, colors)
+
+    jobs = [(list(sgfs[i:i + chunk]), list(colors[i:i + chunk]))
+            for i in range(0, n, chunk)]
+    with ctx.Pool(nproc) as pool:
+        parts = pool.map(_chunk_worker, jobs)
+    X = np.concatenate([p[0] for p in parts], axis=0)
+    ok = np.concatenate([p[1] for p in parts], axis=0)
+    return X, ok

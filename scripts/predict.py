@@ -27,7 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from aicup import RANK_TO_ID, ID_TO_RANK                       # noqa: E402
 from aicup.data import load_metadata, make_player_split        # noqa: E402
-from aicup.features import batch_features                      # noqa: E402
+from aicup.features import batch_features, parallel_batch_features  # noqa: E402
 from aicup.baselines import RankBaseline, PlayerBaseline       # noqa: E402
 from aicup.scoring import (apply_temperature, decode_expected_score,   # noqa: E402
                            rank_final_score, top_k_from_similarity,
@@ -50,7 +50,7 @@ def _question_features(df: pd.DataFrame):
             if pd.notna(v) and str(v).strip():
                 flat_sgf.append(v); flat_col.append(r[cc]); n += 1
         sizes.append(n)
-    X, ok = batch_features(flat_sgf, flat_col)
+    X, ok = parallel_batch_features(flat_sgf, flat_col)
     out, pos = [], 0
     for n in sizes:
         block = X[pos:pos + n][ok[pos:pos + n]]
@@ -133,7 +133,8 @@ def main() -> int:
         cand = pd.read_csv(os.path.join(
             args.test_dir, f"player_identification_candidates_{tag}.csv"))
         t0 = time.time()
-        Xc, okc = batch_features(cand["sgf_content"].tolist(), cand["color"].tolist())
+        Xc, okc = parallel_batch_features(cand["sgf_content"].tolist(),
+                                          cand["color"].tolist())
         pb = PlayerBaseline().fit(Xc[okc])
         names = sorted(cand["player_id"].unique())
         pid = cand["player_id"].to_numpy()

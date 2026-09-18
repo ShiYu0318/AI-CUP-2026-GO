@@ -110,3 +110,22 @@ def test_malformed_sgf_is_handled():
 def test_deterministic(sample):
     sgf, col = sample.sgf_content.iloc[3], sample.color.iloc[3]
     assert np.array_equal(game_features(sgf, col), game_features(sgf, col))
+
+
+def test_parallel_matches_serial(sample):
+    """平行版必須與單進程版產生完全相同的結果。"""
+    from aicup.features import parallel_batch_features
+    s = sample.sgf_content.tolist() * 40          # 撐過 chunk 門檻才會真的分工
+    c = sample.color.tolist() * 40
+    Xs, oks = batch_features(s, c)
+    Xp, okp = parallel_batch_features(s, c, nproc=4, chunk=200)
+    assert np.array_equal(oks, okp)
+    assert np.allclose(Xs, Xp)
+
+
+def test_parallel_falls_back_for_small_input(sample):
+    from aicup.features import parallel_batch_features
+    s = sample.sgf_content.tolist()[:5]
+    c = sample.color.tolist()[:5]
+    X, ok = parallel_batch_features(s, c, nproc=4, chunk=2000)
+    assert X.shape == (5, N_FEATURES)
