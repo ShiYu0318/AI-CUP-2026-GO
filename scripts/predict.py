@@ -93,7 +93,7 @@ def main() -> int:
     args = ap.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
-    answers = {}
+    answers = {"rank": {}, "player": {}}
     ans_path = os.path.join(args.test_dir, "_answers.json")
     if os.path.exists(ans_path):
         with open(ans_path) as f:
@@ -114,13 +114,13 @@ def main() -> int:
         P = apply_temperature(np.log(np.clip(P, 1e-12, None)), args.temperature)
         pred = decode_expected_score(P)
         qids.extend(df["question_id"].tolist()); preds.extend(pred.tolist())
-        truth.extend([answers.get(q) for q in df["question_id"]])
+        truth.extend([answers["rank"].get(q) for q in df["question_id"]])
         print(f"  {tag:<8} {len(df)} 題，{time.time() - t0:.0f} 秒")
 
     sub = build_rank_submission(qids, preds)
     path = write_submission(sub, os.path.join(args.out_dir, "submission_rank.csv"), "rank")
     print(f"  已寫出 {path}（{len(sub)} 列，格式驗證通過）")
-    if all(t is not None for t in truth):
+    if truth and all(t is not None for t in truth):
         y = np.array([RANK_TO_ID[t] for t in truth])
         print(f"  離線分數 {rank_final_score(np.array(preds), y):.4f}")
 
@@ -147,7 +147,7 @@ def main() -> int:
         Q = np.stack([pb.template(f) if len(f) else np.zeros(G.shape[1]) for f in feats])
         top5 = top_k_from_similarity(Q @ G.T, names, k=5)
         all_qids.extend(df["question_id"].tolist()); all_top5.extend(top5.tolist())
-        all_truth.extend([answers.get(q) for q in df["question_id"]])
+        all_truth.extend([answers["rank"].get(q) for q in df["question_id"]])
 
     sub = build_player_submission(all_qids, all_top5)
     pools = {}
@@ -159,7 +159,7 @@ def main() -> int:
                             "player", public_candidates=pools["pub"],
                             private_candidates=pools["priv"])
     print(f"  已寫出 {path}（{len(sub)} 列，格式驗證通過）")
-    if all(t is not None for t in all_truth):
+    if all_truth and all(t is not None for t in all_truth):
         ranks = np.array([row.index(t) if t in row else 99
                           for row, t in zip(all_top5, all_truth)])
         print(f"  離線分數 {player_final_score(ranks):.4f}"

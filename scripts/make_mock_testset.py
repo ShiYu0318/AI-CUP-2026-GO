@@ -98,15 +98,17 @@ def main() -> int:
     meta = load_metadata()
     # 用另一個 seed 的切分，確保模擬測試集的玩家與主驗證集也不重疊
     split = make_player_split(meta, val_frac=0.20, seed=42)
-    answers: dict = {}
+    # 兩個子題是獨立的競賽，question_id 各自編號，答案必須分開存，
+    # 否則 pub_q_0001 會互相覆蓋。
+    answers: dict = {"rank": {}, "player": {}}
 
     for prefix, seed in (("pub_", 101), ("priv_", 202)):
-        df = _write_rank_split(meta, split, prefix, seed, args.n_questions, answers)
+        df = _write_rank_split(meta, split, prefix, seed, args.n_questions, answers["rank"])
         tag = "public" if prefix == "pub_" else "private"
         df.to_csv(f"{args.out}/rank_prediction_test_{tag}.csv", index=False)
         print(f"  rank_prediction_test_{tag}.csv  {len(df)} 題")
 
-        t, c = _write_player_split(meta, split, prefix, seed, answers)
+        t, c = _write_player_split(meta, split, prefix, seed, answers["player"])
         t.to_csv(f"{args.out}/player_identification_test_{tag}.csv", index=False)
         c.to_csv(f"{args.out}/player_identification_candidates_{tag}.csv", index=False)
         print(f"  player_identification_test_{tag}.csv  {len(t)} 題"
