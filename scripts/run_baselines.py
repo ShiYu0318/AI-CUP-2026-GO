@@ -82,8 +82,11 @@ def main() -> int:
               f" | 期望解碼 {res['score_expected']:.4f}"
               f" | 增益 {res['decoding_gain']:+.4f}")
 
-    # 單局 accuracy 當對照，說明聚合貢獻多大
-    va_rows = np.flatnonzero(val_mask & ok)[:50000]
+    # 單局 accuracy 當對照，說明聚合貢獻多大。
+    # ⚠️ 必須隨機抽樣：metadata 依檔案串接（1D,2D,...,D），
+    # 直接取前 N 列會只落在前一兩個等級，算出來的 accuracy 毫無意義。
+    va_pool = np.flatnonzero(val_mask & ok)
+    va_rows = rng.choice(va_pool, size=min(50000, len(va_pool)), replace=False)
     single = float((model.game_proba(np.asarray(X[va_rows])).argmax(1) == rank_id[va_rows]).mean())
     report["rank"]["single_game_top1"] = single
     print(f"  （對照）單局 top-1 accuracy {single:.4f}\n")
