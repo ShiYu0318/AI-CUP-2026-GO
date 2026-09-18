@@ -70,11 +70,16 @@ def _fit_rank_model(cache_path: str, train_per_rank: int):
     vm = split.mask(meta)
     rank_id = meta["rank_id"].to_numpy()
     rng = np.random.default_rng(0)
-    rows = np.concatenate([
-        rng.choice(np.flatnonzero((~vm) & ok & (rank_id == lv)),
-                   size=min(train_per_rank, int(((~vm) & ok & (rank_id == lv)).sum())),
-                   replace=False)
-        for lv in range(10)])
+    if train_per_rank and train_per_rank > 0:
+        rows = np.concatenate([
+            rng.choice(np.flatnonzero((~vm) & ok & (rank_id == lv)),
+                       size=min(train_per_rank,
+                                int(((~vm) & ok & (rank_id == lv)).sum())),
+                       replace=False)
+            for lv in range(10)])
+    else:
+        rows = np.flatnonzero((~vm) & ok)          # 全量訓練玩家的棋局
+    print(f"  棋力模型訓練局數 {len(rows):,}", flush=True)
     model = RankBaseline().fit(np.asarray(X[rows]), rank_id[rows])
     os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
     with open(cache_path, "wb") as f:
@@ -86,7 +91,9 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--test-dir", default="mock_tests")
     ap.add_argument("--out-dir", default="cache/submissions")
-    ap.add_argument("--train-per-rank", type=int, default=20000)
+    ap.add_argument("--train-per-rank", type=int, default=0,
+                    help="每個等級取幾局訓練棋力模型。0 = 用全部訓練玩家的棋局"
+                         "（實測全量 0.3973 vs 每級 2 萬局 0.3866，值得多花訓練時間）")
     ap.add_argument("--temperature", type=float, default=0.5,
                     help="題目後驗的溫度；<1 為銳化。實測最佳 0.5~0.6")
     ap.add_argument("--aggregation", default="logmean", choices=["mean", "logmean"])
