@@ -49,8 +49,14 @@ def pick_device(name: str) -> torch.device:
 
 
 @torch.no_grad()
-def evaluate_rank(model, meta, questions, device, n_snapshots: int, max_q: int = 200):
-    """題目層級的官方分數——這才是選 checkpoint 的依據。"""
+def evaluate_rank(model, meta, questions, device, n_snapshots: int, max_q: int = 800):
+    """題目層級的官方分數——這才是選 checkpoint 的依據。
+
+    ⚠️ 題數要夠多。官方測試集是 400 題，二項分布的標準誤約
+    sqrt(0.25/400) ≈ 0.025；用 200 題評估時標準誤高達 ~0.035，
+    兩個設定差 0.04 以內根本分不出來。實測就踩過這個坑：
+    兩次評估得到 0.2323 與 0.1912，看起來差很多，其實在雜訊範圍內。
+    """
     from aicup.dataset import QuestionDataset, collate_questions
     ds = QuestionDataset(meta, questions, n_snapshots=n_snapshots)
     n = min(max_q, len(ds))
@@ -83,6 +89,8 @@ def main() -> int:
     ap.add_argument("--steps", type=int, default=2000)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--eval-every", type=int, default=500)
+    ap.add_argument("--eval-questions", type=int, default=800,
+                    help="評估題數。太少會讓 checkpoint 選擇被雜訊主導（見 evaluate_rank）")
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--arcface-weight", type=float, default=1.0)
     ap.add_argument("--corn-weight", type=float, default=0.5)
@@ -98,6 +106,7 @@ def main() -> int:
     if args.smoke:
         args.width, args.blocks, args.embed_dim = 16, 1, 32
         args.p, args.k, args.steps, args.eval_every = 4, 2, 4, 2
+        args.eval_questions = 8
         args.snapshots, args.workers = 1, 0
 
     device = pick_device(args.device)
@@ -150,7 +159,7 @@ def main() -> int:
         return value / max(scale[name], 1e-8)
 
     questions = build_rank_questions(meta, split, n_per_player=1, seed=0,
-                                     max_questions=200 if not args.smoke else 8)
+                                     max_questions=8 if args.smoke else args.eval_questions)
     history, best = [], -1.0
     t0 = time.time()
     model.train()
@@ -179,7 +188,7 @@ def main() -> int:
 
         if step % max(1, args.eval_every) == 0 or step == args.steps:
             ev = evaluate_rank(model, meta, questions, device, args.snapshots,
-                               max_q=8 if args.smoke else 200)
+                               max_q=8 if args.smoke else args.eval_questions)
             rec = {"step": step, "loss": loss.item(), "loss_rank": loss_rank.item(),
                    "loss_corn": loss_corn.item(), "loss_arc": loss_arc.item(),
                    "minutes": (time.time() - t0) / 60, **ev}
