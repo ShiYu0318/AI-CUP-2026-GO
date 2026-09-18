@@ -79,8 +79,16 @@ def player_row_index(meta: pd.DataFrame) -> dict[str, np.ndarray]:
 
 
 def _player_rows(meta: pd.DataFrame, players) -> dict[str, np.ndarray]:
+    """回傳 player_id -> 列索引，**鍵一律排序**。
+
+    ⚠️ 這個 sorted() 不是裝飾。`PlayerSplit.val_players` 是 frozenset，
+    而 Python 的字串雜湊每個 process 隨機化（除非設 PYTHONHASHSEED），
+    所以 frozenset 的迭代順序**跨 process 不穩定**。
+    若直接照 set 的順序建題目，同一個 seed 在不同次執行會產生不同的題目集，
+    量到的分數就無法重現——實測同一支腳本跑兩次得到 0.4550 與 0.4637。
+    """
     index = player_row_index(meta)
-    return {pid: index[pid] for pid in players if pid in index}
+    return {pid: index[pid] for pid in sorted(players) if pid in index}
 
 
 def build_rank_questions(meta: pd.DataFrame, split: PlayerSplit, *,
@@ -142,7 +150,8 @@ def _choose_candidates(eligible_by_rank: dict[int, list[str]], composition: Comp
         chosen.extend(avail[:q])
     # 若某些等級人數不足，從其餘等級補滿
     if len(chosen) < n_candidates:
-        rest = [p for r in pool_ranks for p in eligible_by_rank.get(r, []) if p not in set(chosen)]
+        taken = set(chosen)
+        rest = [p for r in pool_ranks for p in eligible_by_rank.get(r, []) if p not in taken]
         rng.shuffle(rest)
         chosen.extend(rest[: n_candidates - len(chosen)])
     return chosen[:n_candidates]
@@ -158,7 +167,7 @@ def build_player_pool(meta: pd.DataFrame, split: PlayerSplit, *,
 
     need = n_gallery + MIN_GAMES
     eligible_by_rank: dict[int, list[str]] = {}
-    for pid, idx in rows.items():
+    for pid, idx in rows.items():          # rows 的鍵已排序，順序可重現
         if len(idx) >= need:
             eligible_by_rank.setdefault(int(rank_of[pid]), []).append(pid)
 

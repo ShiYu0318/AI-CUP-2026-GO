@@ -183,3 +183,43 @@ def test_split_and_questions_are_not_color_biased(meta, split):
     all_rows = np.concatenate(q.game_rows)
     frac_black = float((colors[all_rows] == "B").mean())
     assert 0.40 < frac_black < 0.60
+
+
+# ---------------- 可重現性 ----------------
+
+def test_player_rows_keys_are_sorted(meta, split):
+    """鍵必須排序——frozenset 的迭代順序跨 process 不穩定，
+    直接照它的順序建題目會讓同一個 seed 產生不同的題目集。"""
+    from aicup.benchmark import _player_rows
+    rows = _player_rows(meta, split.val_players)
+    keys = list(rows)
+    assert keys == sorted(keys)
+
+
+def test_rank_questions_reproducible_given_seed(meta, split):
+    a = build_rank_questions(meta, split, n_per_player=1, seed=5, max_questions=50)
+    b = build_rank_questions(meta, split, n_per_player=1, seed=5, max_questions=50)
+    assert list(a.player_id) == list(b.player_id)
+    assert (a.true_rank_id == b.true_rank_id).all()
+    for x, y in zip(a.game_rows, b.game_rows):
+        assert (x == y).all()
+
+
+def test_player_pool_reproducible_given_seed(meta, split):
+    a = build_player_pool(meta, split, seed=5)
+    b = build_player_pool(meta, split, seed=5)
+    assert a.players == b.players
+    for p in a.players:
+        assert (a.gallery_rows[p] == b.gallery_rows[p]).all()
+        assert (a.query_rows[p] == b.query_rows[p]).all()
+
+
+def test_question_set_is_independent_of_set_iteration_order(meta, split):
+    """把 val_players 換成順序不同的容器，產生的題目必須完全相同。"""
+    from aicup.data import PlayerSplit
+    shuffled = PlayerSplit(split.train_players,
+                           frozenset(sorted(split.val_players, reverse=True)),
+                           split.seed, split.val_frac)
+    a = build_rank_questions(meta, split, n_per_player=1, seed=3, max_questions=40)
+    b = build_rank_questions(meta, shuffled, n_per_player=1, seed=3, max_questions=40)
+    assert list(a.player_id) == list(b.player_id)
