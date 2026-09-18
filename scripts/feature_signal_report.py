@@ -62,7 +62,12 @@ def main() -> int:
     players = players[: args.players]
     means, within = [], []
     for pid in players:
-        rows = sub.index[sub["player_id"] == pid].to_numpy()[:100]
+        rows = sub.index[sub["player_id"] == pid].to_numpy()
+        # ⚠️ 必須隨機抽樣。官方 CSV 依執色排序（前 5 萬列全 B、後 5 萬列全 W），
+        # 直接取前 100 列會拿到幾乎單一執色的樣本，讓 is_black 之類的特徵
+        # 憑空得到很高的「玩家區辨力」。這個腳本第一版就踩了這個坑。
+        if len(rows) > 100:
+            rows = rng.choice(rows, size=100, replace=False)
         A = np.asarray(X[rows])
         means.append(A.mean(axis=0))
         within.append(A.var(axis=0))
