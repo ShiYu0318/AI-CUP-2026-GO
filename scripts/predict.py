@@ -148,7 +148,7 @@ def main() -> int:
         Q = np.stack([pb.template(f) if len(f) else np.zeros(G.shape[1]) for f in feats])
         top5 = top_k_from_similarity(Q @ G.T, names, k=5)
         all_qids.extend(df["question_id"].tolist()); all_top5.extend(top5.tolist())
-        all_truth.extend([answers["rank"].get(q) for q in df["question_id"]])
+        all_truth.extend([answers["player"].get(q) for q in df["question_id"]])
 
     sub = build_player_submission(all_qids, all_top5)
     pools = {}
