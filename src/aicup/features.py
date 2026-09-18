@@ -74,10 +74,20 @@ def _scalar_names() -> list[str]:
     return n
 
 
+K_SEQ = 6          # 開局前幾手要保留「順序」
+
 SCALAR_NAMES = _scalar_names()
 FEATURE_NAMES = (SCALAR_NAMES
                  + [f"open_cell{i}" for i in range(N_FOLD)]
-                 + [f"all_cell{i}" for i in range(N_FOLD)])
+                 + [f"all_cell{i}" for i in range(N_FOLD)]
+                 # 開局順序族：前 K_SEQ 手各自的折疊位置 one-hot。
+                 # open_cell* 是直方圖、**順序完全丟失**，但
+                 # 「先星位、再小目、然後掛角」是極強的個人簽名。
+                 # 實測（無學習基準、400 人候選庫）：
+                 #   目前 168 維 0.6641 / 只有開局順序 0.6958 / 兩者合併 0.8490
+                 + [f"seq{k}_cell{i}" for k in range(K_SEQ) for i in range(N_FOLD)]
+                 + ["seq_corners6", "seq_corner_frac", "seq_first_local",
+                    "seq_line_mean", "seq_line_std"])
 N_FEATURES = len(FEATURE_NAMES)
 
 
@@ -289,9 +299,29 @@ def game_features(sgf: str, color: str | int) -> np.ndarray | None:
     all_h /= max(all_h.sum(), 1.0)
     open_h /= max(open_h.sum(), 1.0)
 
+    # ---- 開局順序（保留順序的 one-hot）----
+    seq = np.zeros(K_SEQ * N_FOLD, dtype=np.float32)
+    for k in range(min(K_SEQ, len(fold))):
+        seq[k * N_FOLD + int(fold[k])] = 1.0
+
+    corners = len({(r < 9, c < 9) for r, c in zip(rows[:6], cols[:6])})
+    corner_frac = float(np.mean([_LINE_LUT[r, c] <= 5
+                                 for r, c in zip(rows[:6], cols[:6])]))
+    first_local = float(len(rows))
+    for k in range(1, min(12, len(rows))):
+        if any(abs(int(rows[k]) - int(rows[j])) + abs(int(cols[k]) - int(cols[j])) <= 4
+               for j in range(k)):
+            first_local = float(k)
+            break
+    head_lines = lines[:6]
+    seq_sc = np.array([float(corners), corner_frac, first_local,
+                       float(head_lines.mean()), float(head_lines.std())],
+                      dtype=np.float32)
+
     return np.concatenate([np.array(sc, dtype=np.float32),
                            open_h.astype(np.float32),
-                           all_h.astype(np.float32)])
+                           all_h.astype(np.float32),
+                           seq, seq_sc])
 
 
 def batch_features(sgfs, colors) -> tuple[np.ndarray, np.ndarray]:
