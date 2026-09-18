@@ -129,3 +129,61 @@ def test_parallel_falls_back_for_small_input(sample):
     c = sample.color.tolist()[:5]
     X, ok = parallel_batch_features(s, c, nproc=4, chunk=2000)
     assert X.shape == (5, N_FEATURES)
+
+
+# ---------------- 局面判斷品質族 ----------------
+
+QUALITY_FEATURES = ["wasted_fill", "cap_per_move", "abandon_atari",
+                    "self_atari_rate", "atari_given_rate"]
+
+
+def test_quality_features_exist():
+    for n in QUALITY_FEATURES:
+        assert n in FEATURE_NAMES
+
+
+def test_quality_rates_are_non_negative(sample):
+    X, ok = batch_features(sample.sgf_content.tolist(), sample.color.tolist())
+    for n in QUALITY_FEATURES:
+        v = X[ok, FEATURE_NAMES.index(n)]
+        assert (v >= 0).all(), n
+        assert np.isfinite(v).all(), n
+
+
+def test_quality_rates_are_bounded_by_one(sample):
+    """這些都是「每手一次」的比率，不可能超過 1。"""
+    X, ok = batch_features(sample.sgf_content.tolist(), sample.color.tolist())
+    for n in ("wasted_fill", "abandon_atari", "self_atari_rate"):
+        v = X[ok, FEATURE_NAMES.index(n)]
+        assert (v <= 1.0).all(), n
+
+
+def test_cap_per_move_matches_captures_made(sample):
+    """cap_per_move 必須等於 captures_made / 我方手數。"""
+    X, ok = batch_features(sample.sgf_content.tolist(), sample.color.tolist())
+    made = X[ok, FEATURE_NAMES.index("captures_made")]
+    n_mine = X[ok, FEATURE_NAMES.index("n_mine")]
+    per = X[ok, FEATURE_NAMES.index("cap_per_move")]
+    assert np.allclose(per, made / np.maximum(n_mine, 1), atol=1e-5)
+
+
+def test_quality_features_differ_by_color(sample):
+    """站在黑方與白方看同一局，品質特徵必須不同。"""
+    sgf = sample.sgf_content.iloc[0]
+    a = game_features(sgf, "B")
+    b = game_features(sgf, "W")
+    ii = [FEATURE_NAMES.index(n) for n in QUALITY_FEATURES]
+    assert not np.allclose(a[ii], b[ii])
+
+
+def test_wasted_fill_is_zero_when_no_endgame_selffill():
+    """一局只有開局手時，不可能出現「官子填自己的地」。"""
+    import pandas as pd
+    d = pd.read_csv("training/train_1D.csv", nrows=3)
+    # 只取前 40 手，構造一個沒有官子的殘局
+    sgf = d.sgf_content.iloc[0]
+    moves = sgf.split(";")[:42]
+    short = ";".join(moves) + ")"
+    f = game_features(short, d.color.iloc[0])
+    if f is not None:
+        assert f[FEATURE_NAMES.index("wasted_fill")] == 0.0
