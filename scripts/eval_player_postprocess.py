@@ -82,10 +82,10 @@ def main() -> int:
     results: dict = {}
 
     for n_sub in (1, 5):
-        print(f"\n{'=' * 64}")
+        print(f"\n{'=' * 64}", flush=True)
         print(f"每位候選的 gallery 條目數 = {n_sub}"
               f"（{'單一 template' if n_sub == 1 else '100 局切成 5 組子 template'}）")
-        print("=" * 64)
+        print("=" * 64, flush=True)
         for label, cfg in configs:
             runs = []
             for s in range(args.seeds):
@@ -101,11 +101,11 @@ def main() -> int:
             results[f"sub{n_sub}_{label}"] = {"score_mean": float(sc.mean()),
                                               "score_std": float(sc.std()),
                                               "top1_mean": float(t1.mean())}
-            print(f"  {label:<22} 分數 {sc.mean():.4f} ±{sc.std():.4f}   Top-1 {t1.mean():.4f}")
+            print(f"  {label:<22} 分數 {sc.mean():.4f} ±{sc.std():.4f}   Top-1 {t1.mean():.4f}", flush=True)
 
     with open("cache/postprocess_report.json", "w") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
-    print("\n報告已寫出：cache/postprocess_report.json")
+    print("\n報告已寫出：cache/postprocess_report.json", flush=True)
     return 0
 
 

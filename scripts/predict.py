@@ -100,9 +100,9 @@ def main() -> int:
             answers = json.load(f)
 
     # ---------------- 競賽二 ----------------
-    print("=" * 60)
-    print("競賽二：棋力預測")
-    print("=" * 60)
+    print("=" * 60, flush=True)
+    print("競賽二：棋力預測", flush=True)
+    print("=" * 60, flush=True)
     model = _fit_rank_model("cache/rank_model.pkl", args.train_per_rank)
     qids, preds, truth = [], [], []
     for tag in ("public", "private"):
@@ -115,19 +115,19 @@ def main() -> int:
         pred = decode_expected_score(P)
         qids.extend(df["question_id"].tolist()); preds.extend(pred.tolist())
         truth.extend([answers["rank"].get(q) for q in df["question_id"]])
-        print(f"  {tag:<8} {len(df)} 題，{time.time() - t0:.0f} 秒")
+        print(f"  {tag:<8} {len(df)} 題，{time.time() - t0:.0f} 秒", flush=True)
 
     sub = build_rank_submission(qids, preds)
     path = write_submission(sub, os.path.join(args.out_dir, "submission_rank.csv"), "rank")
-    print(f"  已寫出 {path}（{len(sub)} 列，格式驗證通過）")
+    print(f"  已寫出 {path}（{len(sub)} 列，格式驗證通過）", flush=True)
     if truth and all(t is not None for t in truth):
         y = np.array([RANK_TO_ID[t] for t in truth])
-        print(f"  離線分數 {rank_final_score(np.array(preds), y):.4f}")
+        print(f"  離線分數 {rank_final_score(np.array(preds), y):.4f}", flush=True)
 
     # ---------------- 競賽一 ----------------
-    print("\n" + "=" * 60)
-    print("競賽一：玩家辨識")
-    print("=" * 60)
+    print("\n" + "=" * 60, flush=True)
+    print("競賽一：玩家辨識", flush=True)
+    print("=" * 60, flush=True)
     all_qids, all_top5, all_truth = [], [], []
     for tag in ("public", "private"):
         cand = pd.read_csv(os.path.join(
@@ -159,7 +159,7 @@ def main() -> int:
     path = write_submission(sub, os.path.join(args.out_dir, "submission_player.csv"),
                             "player", public_candidates=pools["pub"],
                             private_candidates=pools["priv"])
-    print(f"  已寫出 {path}（{len(sub)} 列，格式驗證通過）")
+    print(f"  已寫出 {path}（{len(sub)} 列，格式驗證通過）", flush=True)
     if all_truth and all(t is not None for t in all_truth):
         ranks = np.array([row.index(t) if t in row else 99
                           for row, t in zip(all_top5, all_truth)])

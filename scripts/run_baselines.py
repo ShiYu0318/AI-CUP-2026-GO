@@ -49,13 +49,13 @@ def main() -> int:
     split = make_player_split(meta, val_frac=0.20, seed=args.split_seed)
     val_mask = split.mask(meta)
     report: dict = {"config": vars(args)}
-    print(f"特徵庫 {X.shape}，成功率 {ok.mean():.4f}")
-    print(f"切分：訓練玩家 {len(split.train_players):,} / 驗證玩家 {len(split.val_players):,}\n")
+    print(f"特徵庫 {X.shape}，成功率 {ok.mean():.4f}", flush=True)
+    print(f"切分：訓練玩家 {len(split.train_players):,} / 驗證玩家 {len(split.val_players):,}\n", flush=True)
 
     # ---------------- 競賽二 ----------------
-    print("=" * 62)
-    print("競賽二：棋力預測")
-    print("=" * 62)
+    print("=" * 62, flush=True)
+    print("競賽二：棋力預測", flush=True)
+    print("=" * 62, flush=True)
     rng = np.random.default_rng(0)
     rank_id = meta["rank_id"].to_numpy()
     tr_rows = []
@@ -64,15 +64,15 @@ def main() -> int:
         take = min(args.train_per_rank, len(cand))
         tr_rows.append(rng.choice(cand, size=take, replace=False))
     tr_rows = np.concatenate(tr_rows)
-    print(f"訓練局數 {len(tr_rows):,}")
+    print(f"訓練局數 {len(tr_rows):,}", flush=True)
 
     t0 = time.time()
     model = RankBaseline().fit(np.asarray(X[tr_rows]), rank_id[tr_rows])
-    print(f"訓練完成 {time.time() - t0:.0f} 秒")
+    print(f"訓練完成 {time.time() - t0:.0f} 秒", flush=True)
 
     q = build_rank_questions(meta, split, n_per_player=3, seed=0)
     feats = [np.asarray(X[r[ok[r]]]) for r in q.game_rows]
-    print(f"驗證題數 {len(q):,}，每題局數 mean {q.n_games.mean():.1f}\n")
+    print(f"驗證題數 {len(q):,}，每題局數 mean {q.n_games.mean():.1f}\n", flush=True)
 
     report["rank"] = {}
     for how in ("mean", "logmean"):
@@ -89,12 +89,12 @@ def main() -> int:
     va_rows = rng.choice(va_pool, size=min(50000, len(va_pool)), replace=False)
     single = float((model.game_proba(np.asarray(X[va_rows])).argmax(1) == rank_id[va_rows]).mean())
     report["rank"]["single_game_top1"] = single
-    print(f"  （對照）單局 top-1 accuracy {single:.4f}\n")
+    print(f"  （對照）單局 top-1 accuracy {single:.4f}\n", flush=True)
 
     # ---------------- 競賽一 ----------------
-    print("=" * 62)
-    print("競賽一：玩家辨識")
-    print("=" * 62)
+    print("=" * 62, flush=True)
+    print("競賽一：玩家辨識", flush=True)
+    print("=" * 62, flush=True)
     report["player"] = {}
     for comp in ("uniform", "natural", "skewed", "dan_only", "kyu_only"):
         scores, tops = [], []
@@ -122,14 +122,14 @@ def main() -> int:
         print(f"  {comp:<10} {len(keep):>3} 人  分數 {np.mean(scores):.4f} ±{np.std(scores):.4f}"
               f"  Top-1 {np.mean(tops):.4f}")
 
-    print("\n  依每題局數分組（composition=uniform, seed=0）:")
+    print("\n  依每題局數分組（composition=uniform, seed=0）:", flush=True)
     for k, v in (report["player"]["uniform"]["by_query_size"] or {}).items():
-        print(f"    {k:>6} 局: n={v['n']:>3}  分數 {v['score']:.4f}  Top-1 {v['top1']:.4f}")
+        print(f"    {k:>6} 局: n={v['n']:>3}  分數 {v['score']:.4f}  Top-1 {v['top1']:.4f}", flush=True)
 
     out = os.path.join(CACHE, "baseline_report.json")
     with open(out, "w") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
-    print(f"\n報告已寫出：{out}")
+    print(f"\n報告已寫出：{out}", flush=True)
     return 0
 
 

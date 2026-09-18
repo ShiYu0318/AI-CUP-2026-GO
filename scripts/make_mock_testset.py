@@ -106,7 +106,7 @@ def main() -> int:
         df = _write_rank_split(meta, split, prefix, seed, args.n_questions, answers["rank"])
         tag = "public" if prefix == "pub_" else "private"
         df.to_csv(f"{args.out}/rank_prediction_test_{tag}.csv", index=False)
-        print(f"  rank_prediction_test_{tag}.csv  {len(df)} 題")
+        print(f"  rank_prediction_test_{tag}.csv  {len(df)} 題", flush=True)
 
         t, c = _write_player_split(meta, split, prefix, seed, answers["player"])
         t.to_csv(f"{args.out}/player_identification_test_{tag}.csv", index=False)
@@ -116,7 +116,7 @@ def main() -> int:
 
     with open(f"{args.out}/_answers.json", "w") as f:
         json.dump(answers, f)
-    print(f"\n正解已寫出（官方不會提供，僅供離線評分）：{args.out}/_answers.json")
+    print(f"\n正解已寫出（官方不會提供，僅供離線評分）：{args.out}/_answers.json", flush=True)
     return 0
 
 
