@@ -2,9 +2,6 @@
 
 這些測試是整個專案的地基：若評分實作錯了，所有實驗結論都會跟著錯。
 """
-import sys, pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
-
 import numpy as np
 import pytest
 

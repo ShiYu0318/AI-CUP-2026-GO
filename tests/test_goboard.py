@@ -1,7 +1,4 @@
 """SGF 解析與棋盤邏輯的測試（提子、氣、座標系）。"""
-import sys, pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "src"))
-
 import numpy as np
 
 from aicup.goboard import (
