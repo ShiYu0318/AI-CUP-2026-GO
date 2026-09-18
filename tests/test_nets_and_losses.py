@@ -229,16 +229,35 @@ def test_board_transformer_is_differentiable():
 
 
 def test_board_transformer_mixes_distant_positions():
-    """自注意力必須讓遠處的落子影響本處——這是純卷積做不到的。"""
+    """自注意力必須讓遠處的落子影響本處——這是純卷積做不到的。
+
+    ⚠️ 擾動必須造成**通道之間的差異**。區塊開頭是 LayerNorm（在通道維度上正規化），
+    若把某個點的所有通道設成同一個常數，那個常數會被 LayerNorm 完全消掉，
+    等於沒有改動——這個測試第一版就是這樣寫錯的。
+    """
     from aicup.nets import BoardTransformerBlock
     torch.manual_seed(0)
     b = BoardTransformerBlock(8).eval()
     x = torch.zeros(1, 8, 19, 19)
     with torch.no_grad():
         base = b(x)[0, :, 0, 0].clone()
-        x[0, :, 18, 18] = 5.0                    # 只改對角最遠的點
+        x[0, 0, 18, 18] = 5.0                    # 只動單一通道，製造通道間差異
         moved = b(x)[0, :, 0, 0]
     assert not torch.allclose(base, moved, atol=1e-5)
+
+
+def test_layernorm_cancels_uniform_channel_shift():
+    """把這個反直覺的性質固定下來：整個 token 的所有通道加同一個常數，
+    經過 LayerNorm 後完全沒有影響。"""
+    from aicup.nets import BoardTransformerBlock
+    torch.manual_seed(0)
+    b = BoardTransformerBlock(8).eval()
+    x = torch.zeros(1, 8, 19, 19)
+    with torch.no_grad():
+        base = b(x)[0, :, 0, 0].clone()
+        x[0, :, 18, 18] = 5.0                    # 所有通道同值
+        same = b(x)[0, :, 0, 0]
+    assert torch.allclose(base, same, atol=1e-5)
 
 
 def test_trunk_with_transformer_blocks_has_more_params():
