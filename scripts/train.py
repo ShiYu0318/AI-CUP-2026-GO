@@ -86,6 +86,11 @@ def main() -> int:
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--arcface-weight", type=float, default=1.0)
     ap.add_argument("--corn-weight", type=float, default=0.5)
+    ap.add_argument("--balance-losses", action="store_true",
+                    help="用各損失的滑動平均把量級正規化，避免大量級的損失壟斷梯度。"
+                         "實測未加時 arcface 損失量級 13~17、rank 只有 2.3，"
+                         "rank head 在 3,000 步內幾乎沒學到東西")
+    ap.add_argument("--balance-momentum", type=float, default=0.99)
     ap.add_argument("--out", default="cache/checkpoints")
     ap.add_argument("--smoke", action="store_true", help="極小設定，只驗證流程能跑通")
     args = ap.parse_args()
@@ -132,6 +137,18 @@ def main() -> int:
     soft_ce = SoftLabelCrossEntropy(N_LEVELS, decay=1.0)
     corn = CornLoss(N_LEVELS)
 
+    # 各損失的量級差很多（arcface 13~17 vs rank 2.3），直接相加會讓梯度被
+    # 大量級的那一項主導。這裡用滑動平均把每項除以自身尺度，讓三個任務等權。
+    scale = {"rank": None, "corn": None, "arc": None}
+
+    def _balanced(name, value):
+        if not args.balance_losses:
+            return value
+        v = float(value.detach())
+        scale[name] = v if scale[name] is None else (
+            args.balance_momentum * scale[name] + (1 - args.balance_momentum) * v)
+        return value / max(scale[name], 1e-8)
+
     questions = build_rank_questions(meta, split, n_per_player=1, seed=0,
                                      max_questions=200 if not args.smoke else 8)
     history, best = [], -1.0
@@ -150,7 +167,9 @@ def main() -> int:
         loss_corn = corn(out["corn_logits"], y_rank)
         logits = arc(out["embedding"], y_player)
         loss_arc = F.cross_entropy(logits, y_player)
-        loss = loss_rank + args.corn_weight * loss_corn + args.arcface_weight * loss_arc
+        loss = (_balanced("rank", loss_rank)
+                + args.corn_weight * _balanced("corn", loss_corn)
+                + args.arcface_weight * _balanced("arc", loss_arc))
 
         opt.zero_grad(set_to_none=True)
         loss.backward()
