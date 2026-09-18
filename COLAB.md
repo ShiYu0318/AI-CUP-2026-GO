@@ -44,7 +44,8 @@ Colab 免費版當備援。
 # 1) 取得程式碼
 !git clone https://github.com/ShiYu0318/AI-CUP-2026-GO.git
 %cd AI-CUP-2026-GO
-!pip install -q webdataset sgfmill   # torch/numpy/pandas/sklearn Colab 已內建
+# 不需要任何 pip install：訓練路徑只用到 numpy / pandas / sklearn / torch，
+# Colab 與 Kaggle 都已預裝（本專案的 SGF parser 是自己寫的，不依賴 sgfmill）
 
 # 2) 直接在雲端下載資料集（214 MB，不要從本機上傳）
 !wget -q https://github.com/AILAB-NDHU/aicup2026-go-dataset/releases/download/v1.0/aicup2026_go_training.tar.xz

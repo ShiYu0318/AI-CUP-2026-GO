@@ -108,6 +108,10 @@ def main() -> int:
                          "長訓練一定要開這個")
     ap.add_argument("--save-every", type=int, default=500,
                     help="每 N 步存一次 last.pt（含 optimizer 與 scheduler 狀態）")
+    ap.add_argument("--max-hours", type=float, default=0.0,
+                    help="時間預算（小時）。到點就存檔並正常結束，之後用 --resume 接回。"
+                         "Kaggle Notebooks 的 12 小時是硬上限、到點直接砍掉，"
+                         "設成 11.5 可以確保最後的 checkpoint 一定寫得出去")
     ap.add_argument("--smoke", action="store_true", help="極小設定，只驗證流程能跑通")
     args = ap.parse_args()
 
@@ -253,12 +257,18 @@ def main() -> int:
                             "score": best},
                            os.path.join(args.out, "best.pt"))
 
-        if step % max(1, args.save_every) == 0 or step == args.steps:
-            # 續訓用的完整狀態。Colab 斷線後 --resume 可從這裡接回去。
+        out_of_time = (args.max_hours > 0
+                       and (time.time() - t0) / 3600 >= args.max_hours)
+        if step % max(1, args.save_every) == 0 or step == args.steps or out_of_time:
+            # 續訓用的完整狀態。斷線或用完時間預算後 --resume 可從這裡接回去。
             torch.save({"model": model.state_dict(), "arc": arc.state_dict(),
                         "opt": opt.state_dict(), "sched": sched.state_dict(),
                         "step": step, "best": best, "history": history,
                         "args": vars(args)}, last_path)
+        if out_of_time:
+            print(f"\n已達時間預算 {args.max_hours} 小時，於第 {step:,} 步存檔結束。"
+                  f"\n用相同指令加 --resume 可接回（目標 {args.steps:,} 步）。", flush=True)
+            break
 
     with open(os.path.join(args.out, "history.json"), "w") as f:
         json.dump(history, f, indent=2)
