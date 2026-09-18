@@ -30,14 +30,45 @@ from aicup.rerank_stage2 import (pair_features, pair_labels,   # noqa: E402
 from aicup.scoring import retrieval_report                     # noqa: E402
 
 
-def build_sim(meta, split, X, ok, composition: str, seed: int):
-    """建一個模擬候選庫，回傳 (相似度矩陣, 每題局數, 每位候選的 gallery 局數)。"""
+def load_feature_metric(path: str, device):
+    """載入度量學習模型（可選）。第一階段換了模型，重排器就必須跟著重訓。"""
+    import torch
+    from aicup.feature_metric import FeatureEmbedder, FeatureScaler
+    ck = torch.load(path, map_location=device, weights_only=False)
+    a = ck["args"]
+    scaler = FeatureScaler().load_state_dict(ck["scaler"])
+    models = []
+    for sd in ck["models"]:
+        m = FeatureEmbedder(len(scaler.mu), embed_dim=a["embed_dim"], hidden=a["hidden"])
+        m.load_state_dict(sd); m.eval().to(device)
+        models.append(m)
+    return models, scaler
+
+
+def build_sim(meta, split, X, ok, composition: str, seed: int, metric=None, device=None):
+    """建一個模擬候選庫，回傳 (相似度矩陣, 每題局數, 每位候選的 gallery 局數)。
+
+    metric 不為 None 時用度量學習的 embedding 當第一階段，否則用手工特徵餘弦。
+    """
     pool = build_player_pool(meta, split, composition=composition, seed=seed)
     ps = [p for p in pool.players
           if ok[pool.gallery_rows[p]].sum() >= 20 and ok[pool.query_rows[p]].sum() >= 1]
     gf = {p: np.asarray(X[pool.gallery_rows[p][ok[pool.gallery_rows[p]]]]) for p in ps}
     qf = {p: np.asarray(X[pool.query_rows[p][ok[pool.query_rows[p]]]]) for p in ps}
-    sim, _ = PlayerBaseline().build(gf, qf, ps)
+    if metric is None:
+        sim, _ = PlayerBaseline().build(gf, qf, ps)
+    else:
+        from aicup.feature_metric import embed_features, player_template
+        models, scaler = metric
+
+        def tpl(A):
+            v = np.concatenate([player_template(embed_features(m, scaler, A, device))
+                                for m in models])
+            return v / max(float(np.linalg.norm(v)), 1e-8)
+
+        G = np.stack([tpl(gf[p]) for p in ps])
+        Q = np.stack([tpl(qf[p]) for p in ps])
+        sim = Q @ G.T
     return sim, np.array([len(qf[p]) for p in ps]), np.array([len(gf[p]) for p in ps])
 
 
@@ -52,6 +83,12 @@ def main() -> int:
                          "傳多個會混合訓練，對未見組成更穩健（真實候選庫組成未知）")
     ap.add_argument("--cross-composition", action="store_true",
                     help="評估涵蓋 5 種組成，測跨分布穩定性")
+    ap.add_argument("--feature-metric", default="",
+                    help="度量學習模型路徑。⚠️ 重排器與第一階段模型是綁定的——"
+                         "換了第一階段就必須重訓重排器，否則分數會崩"
+                         "（實測：在手工特徵上訓的重排器套到學習後的 embedding，"
+                         "0.8125 -> 0.6552）")
+    ap.add_argument("--device", default="auto")
     ap.add_argument("--out", default="cache/stage2")
     args = ap.parse_args()
 
@@ -61,13 +98,25 @@ def main() -> int:
     meta = load_metadata()
     split = make_player_split(meta, val_frac=0.20, seed=42)
 
+    metric, device = None, None
+    if args.feature_metric and os.path.exists(args.feature_metric):
+        import torch
+        device = (torch.device(args.device) if args.device != "auto" else
+                  torch.device("cuda" if torch.cuda.is_available() else
+                               "mps" if torch.backends.mps.is_available() else "cpu"))
+        metric = load_feature_metric(args.feature_metric, device)
+        print(f"第一階段：度量學習 embedding（{len(metric[0])} 個模型集成）", flush=True)
+    else:
+        print("第一階段：手工特徵餘弦", flush=True)
+
     # ---- 訓練池 ----
     train_comps = args.train_compositions or [args.composition]
     print(f"建立訓練池：組成 {train_comps} × 各 {args.train_pools} 個 seed", flush=True)
     Xs, ys = [], []
     for ci, comp in enumerate(train_comps):
         for s in range(args.train_pools):
-            sim, qn, gn = build_sim(meta, split, X, ok, comp, seed=100 + ci * 50 + s)
+            sim, qn, gn = build_sim(meta, split, X, ok, comp, seed=100 + ci * 50 + s,
+                                    metric=metric, device=device)
             f, pairs = pair_features(sim, top_n=args.top_n,
                                      query_sizes=qn, gallery_sizes=gn)
             Xs.append(f); ys.append(pair_labels(pairs))
@@ -91,7 +140,8 @@ def main() -> int:
     for comp in comps:
         before, after = [], []
         for s in range(args.eval_pools):
-            sim, qn, gn = build_sim(meta, split, X, ok, comp, seed=900 + s)
+            sim, qn, gn = build_sim(meta, split, X, ok, comp, seed=900 + s,
+                                    metric=metric, device=device)
             before.append(retrieval_report(sim)["official_score"])
             new = rerank_scores(clf, sim, top_n=args.top_n,
                                 query_sizes=qn, gallery_sizes=gn)
@@ -106,7 +156,8 @@ def main() -> int:
     names = feature_names(query_sizes=np.zeros(1), gallery_sizes=np.zeros(1))
     print("\n=== pair 特徵重要性（permutation，evaluation pool）===", flush=True)
     from sklearn.inspection import permutation_importance
-    sim, qn, gn = build_sim(meta, split, X, ok, args.composition, seed=999)
+    sim, qn, gn = build_sim(meta, split, X, ok, args.composition, seed=999,
+                            metric=metric, device=device)
     f, pairs = pair_features(sim, top_n=args.top_n, query_sizes=qn, gallery_sizes=gn)
     r = permutation_importance(clf, f, pair_labels(pairs), n_repeats=3,
                                random_state=0, scoring="average_precision")

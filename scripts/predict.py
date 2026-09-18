@@ -98,9 +98,14 @@ def main() -> int:
     ap.add_argument("--temperature", type=float, default=0.5,
                     help="題目後驗的溫度；<1 為銳化。實測最佳 0.5~0.6")
     ap.add_argument("--aggregation", default="logmean", choices=["mean", "logmean"])
-    ap.add_argument("--stage2", default="cache/stage2/model.pkl",
-                    help="競賽一的 Stage-2 重排器。實測 +0.0211（5 種等級組成全為正）。"
-                         "設為空字串可停用")
+    ap.add_argument("--feature-metric", default="cache/feature_metric/models.pt",
+                    help="競賽一的度量學習模型（目前增益最大：0.6630 -> 0.8125）。"
+                         "設為空字串則退回「標準化+L2」的無學習版本")
+    ap.add_argument("--stage2", default="",
+                    help="Stage-2 重排器。⚠️ 它與第一階段綁定："
+                         "對手工餘弦有 +0.0211，但對度量學習的 embedding 無效甚至有害"
+                         "（實測平均 -0.003），所以預設停用。"
+                         "只有在 --feature-metric 留空時才建議啟用 cache/stage2/model.pkl")
     ap.add_argument("--decode", default="threshold",
                     choices=["threshold", "expected", "argmax"],
                     help="解碼方式。實測（5 次獨立切分）：最佳化切點 0.4336±0.0032 > "
@@ -170,6 +175,24 @@ def main() -> int:
     print("\n" + "=" * 60, flush=True)
     print("競賽一：玩家辨識", flush=True)
     print("=" * 60, flush=True)
+    metric = None
+    if args.feature_metric and os.path.exists(args.feature_metric):
+        import torch
+        from aicup.feature_metric import FeatureEmbedder, FeatureScaler
+        mdev = torch.device("cuda" if torch.cuda.is_available() else
+                            "mps" if torch.backends.mps.is_available() else "cpu")
+        ck = torch.load(args.feature_metric, map_location=mdev, weights_only=False)
+        a = ck["args"]
+        scaler = FeatureScaler().load_state_dict(ck["scaler"])
+        models = []
+        for sd in ck["models"]:
+            m = FeatureEmbedder(len(scaler.mu), embed_dim=a["embed_dim"], hidden=a["hidden"])
+            m.load_state_dict(sd); m.eval().to(mdev)
+            models.append(m)
+        metric = (models, scaler, mdev)
+        print(f"  使用度量學習 embedding（{len(models)} 個模型集成，device={mdev}）",
+              flush=True)
+
     all_qids, all_top5, all_truth = [], [], []
     for tag in ("public", "private"):
         cand = pd.read_csv(os.path.join(
@@ -177,17 +200,29 @@ def main() -> int:
         t0 = time.time()
         Xc, okc = parallel_batch_features(cand["sgf_content"].tolist(),
                                           cand["color"].tolist())
-        pb = PlayerBaseline().fit(Xc[okc])
         names = sorted(cand["player_id"].unique())
         pid = cand["player_id"].to_numpy()
-        G = np.stack([pb.template(Xc[okc & (pid == n)]) for n in names])
+
+        if metric is not None:
+            from aicup.feature_metric import embed_features, player_template
+            models, scaler, mdev = metric
+
+            def make_tpl(A):
+                v = np.concatenate([player_template(embed_features(m, scaler, A, mdev))
+                                    for m in models])
+                return v / max(float(np.linalg.norm(v)), 1e-8)
+        else:
+            pb = PlayerBaseline().fit(Xc[okc])
+            make_tpl = pb.template
+
+        G = np.stack([make_tpl(Xc[okc & (pid == n)]) for n in names])
         print(f"  {tag:<8} 候選庫 {len(names)} 人 / {len(cand):,} 局，"
               f"{time.time() - t0:.0f} 秒")
 
         df = pd.read_csv(os.path.join(
             args.test_dir, f"player_identification_test_{tag}.csv"))
         feats = _question_features(df)
-        Q = np.stack([pb.template(f) if len(f) else np.zeros(G.shape[1]) for f in feats])
+        Q = np.stack([make_tpl(f) if len(f) else np.zeros(G.shape[1]) for f in feats])
         sim = Q @ G.T
         if args.stage2 and os.path.exists(args.stage2):
             from aicup.rerank_stage2 import rerank_scores
