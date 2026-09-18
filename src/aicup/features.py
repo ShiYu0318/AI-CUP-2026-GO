@@ -69,8 +69,14 @@ def _scalar_names() -> list[str]:
     #   empty_triangle -0.936  愚形（自己三子成 L、第四點空）—— 圍棋最著名的壞形，
     #                          是目前找到最強的單一棋力訊號
     #   contact_early  -0.662  開局 30 手內的貼身接觸比例，弱者常過早接觸
+    #   territory_rate -0.959（全 10 級）／**-0.997（1D~4D 區間）**
+    #                  下在「自己已有子、對方沒子」的區域的比例。
+    #                  強者較少在已安定處補棋。這是目前唯一能明顯分開段位的訊號。
+    #   fourth_line    +0.625（全 10 級）／**+0.890（1D~4D）** 開局第四線比例
+    #   invade_rate    +0.953 下在對方子較多處的比例
     n += ["wasted_fill", "cap_per_move", "abandon_atari", "self_atari_rate",
-          "atari_given_rate", "empty_triangle", "contact_early"]
+          "atari_given_rate", "empty_triangle", "contact_early",
+          "territory_rate", "invade_rate", "fourth_line_open", "third_line_open"]
     return n
 
 
@@ -190,6 +196,7 @@ def _quality_stats(moves, my: int, opp: int, n_moves: int) -> dict:
     board = Board()
     n_my = wasted = self_atari = abandoned = atari_given = 0
     n_empty_tri = n_contact = n_open = cap_made = 0
+    n_territory = n_invade = n_fourth = n_third = 0
     endgame_start = int(0.75 * n_moves)
     my_in_atari: set[int] = set()          # 我方處於打吃的棋串代表點
 
@@ -204,11 +211,27 @@ def _quality_stats(moves, my: int, opp: int, n_moves: int) -> dict:
         surrounded_by_me = (col == my and i >= endgame_start
                             and all(board.stones[q] == my for q in neigh))
 
+        # 落子「前」看周圍敵我子數：分辨「在自己的地裡補棋」與「侵入對方陣地」
+        if col == my and i >= 40:
+            near_my = sum(1 for qq in neigh if board.stones[qq] == my)
+            near_opp = sum(1 for qq in neigh if board.stones[qq] == opp)
+            if near_opp > near_my:
+                n_invade += 1
+            elif near_my > 0 and near_opp == 0:
+                n_territory += 1
+
         taken = board.play(col, r, c)
 
         if col == my:
             n_my += 1
             cap_made += taken
+            # 開局的線偏好：強者更重視第四線的勢
+            if i < 60:
+                L = int(_LINE_LUT[r, c])
+                if L == 3:
+                    n_fourth += 1
+                elif L == 2:
+                    n_third += 1
             if surrounded_by_me and taken == 0:
                 wasted += 1
             if board.stones[idx] == my:
@@ -255,7 +278,11 @@ def _quality_stats(moves, my: int, opp: int, n_moves: int) -> dict:
             "abandon_atari": abandoned / d, "self_atari_rate": self_atari / d,
             "atari_given_rate": opp_atari_groups / d,
             "empty_triangle": n_empty_tri / d,
-            "contact_early": n_contact / max(n_open, 1)}
+            "contact_early": n_contact / max(n_open, 1),
+            "territory_rate": n_territory / d,
+            "invade_rate": n_invade / d,
+            "fourth_line_open": n_fourth / d,
+            "third_line_open": n_third / d}
 
 
 def game_features(sgf: str, color: str | int) -> np.ndarray | None:
@@ -340,7 +367,9 @@ def game_features(sgf: str, color: str | int) -> np.ndarray | None:
     q = _quality_stats(moves, my, opp, n)
     sc += [q["wasted_fill"], q["cap_per_move"], q["abandon_atari"],
            q["self_atari_rate"], q["atari_given_rate"],
-           q["empty_triangle"], q["contact_early"]]
+           q["empty_triangle"], q["contact_early"],
+           q["territory_rate"], q["invade_rate"],
+           q["fourth_line_open"], q["third_line_open"]]
 
     # ---- 位置分布（8 重對稱折疊）----
     fold = _FOLD_LUT[rows, cols]
