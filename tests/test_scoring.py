@@ -196,3 +196,26 @@ def test_player_fit_uses_gallery_statistics_only():
     pb = PlayerBaseline().fit(gallery)
     assert np.allclose(pb.mu, gallery.mean(0))
     assert np.allclose(pb.sd, gallery.std(0) + pb.eps)
+
+
+def test_batched_question_proba_matches_per_question_loop():
+    """批次化不能改變數值——這是效率優化，不是行為改變。"""
+    from aicup.baselines import RankBaseline
+
+    class _Stub(RankBaseline):
+        def __init__(self):
+            pass
+        def game_proba(self, X):
+            X = np.asarray(X, dtype=float)
+            z = np.exp(X[:, :10] - X[:, :10].max(axis=1, keepdims=True))
+            return z / z.sum(axis=1, keepdims=True)
+
+    rng = np.random.default_rng(0)
+    feats = [rng.normal(size=(int(rng.integers(5, 21)), 12)) for _ in range(20)]
+    feats.append(np.zeros((0, 12)))                 # 含一個空題目
+    m = _Stub()
+    batched = m.question_proba(feats, "mean")
+    manual = np.stack([
+        m.aggregate(m.game_proba(X), "mean") if len(X) else np.full(10, 0.1)
+        for X in feats])
+    assert np.allclose(batched, manual)

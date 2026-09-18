@@ -56,12 +56,30 @@ class RankBaseline:
         return p / p.sum()
 
     def question_proba(self, feats_per_question, how: str = "mean") -> np.ndarray:
-        out = np.zeros((len(feats_per_question), N_LEVELS))
-        for i, X in enumerate(feats_per_question):
-            if len(X) == 0:
-                out[i] = 1.0 / N_LEVELS
-                continue
-            out[i] = self.aggregate(self.game_proba(X), how)
+        """所有題目的棋局一次批次預測再切分。
+
+        逐題呼叫 predict_proba 會讓 4,000 棵樹的固定開銷乘上題數；
+        批次化之後同樣的評估從數分鐘降到數秒。
+        """
+        sizes = [len(X) for X in feats_per_question]
+        out = np.full((len(sizes), N_LEVELS), 1.0 / N_LEVELS)
+        nonempty = [i for i, n in enumerate(sizes) if n > 0]
+        if not nonempty:
+            return out
+
+        flat = np.concatenate([feats_per_question[i] for i in nonempty], axis=0)
+        probs = self.game_proba(flat)
+        cuts = np.cumsum([sizes[i] for i in nonempty])[:-1]
+        for i, block in zip(nonempty, np.split(probs, cuts)):
+            out[i] = self.aggregate(block, how)
+        return out
+
+    def question_proba_from_probs(self, probs_per_question, how: str = "mean") -> np.ndarray:
+        """已有逐局後驗時直接聚合，讓 mean 與 logmean 共用同一次預測。"""
+        out = np.full((len(probs_per_question), N_LEVELS), 1.0 / N_LEVELS)
+        for i, p in enumerate(probs_per_question):
+            if len(p):
+                out[i] = self.aggregate(p, how)
         return out
 
     def evaluate(self, feats_per_question, true_rank_id, how: str = "mean") -> dict:
