@@ -98,6 +98,9 @@ def main() -> int:
     ap.add_argument("--temperature", type=float, default=0.5,
                     help="題目後驗的溫度；<1 為銳化。實測最佳 0.5~0.6")
     ap.add_argument("--aggregation", default="logmean", choices=["mean", "logmean"])
+    ap.add_argument("--stage2", default="cache/stage2/model.pkl",
+                    help="競賽一的 Stage-2 重排器。實測 +0.0211（5 種等級組成全為正）。"
+                         "設為空字串可停用")
     ap.add_argument("--decode", default="threshold",
                     choices=["threshold", "expected", "argmax"],
                     help="解碼方式。實測（5 次獨立切分）：最佳化切點 0.4336±0.0032 > "
@@ -185,7 +188,17 @@ def main() -> int:
             args.test_dir, f"player_identification_test_{tag}.csv"))
         feats = _question_features(df)
         Q = np.stack([pb.template(f) if len(f) else np.zeros(G.shape[1]) for f in feats])
-        top5 = top_k_from_similarity(Q @ G.T, names, k=5)
+        sim = Q @ G.T
+        if args.stage2 and os.path.exists(args.stage2):
+            from aicup.rerank_stage2 import rerank_scores
+            with open(args.stage2, "rb") as fh:
+                st = pickle.load(fh)
+            qn = np.array([len(f) for f in feats])
+            gn = np.array([int((pid == n).sum()) for n in names])
+            sim = rerank_scores(st["model"], sim, top_n=st["top_n"],
+                                query_sizes=qn, gallery_sizes=gn)
+            print(f"  已套用 Stage-2 重排（Top-{st['top_n']} → Top-5）", flush=True)
+        top5 = top_k_from_similarity(sim, names, k=5)
         all_qids.extend(df["question_id"].tolist()); all_top5.extend(top5.tolist())
         all_truth.extend([answers["player"].get(q) for q in df["question_id"]])
 
