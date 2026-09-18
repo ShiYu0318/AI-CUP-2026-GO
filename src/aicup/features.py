@@ -87,7 +87,14 @@ FEATURE_NAMES = (SCALAR_NAMES
                  #   目前 168 維 0.6641 / 只有開局順序 0.6958 / 兩者合併 0.8490
                  + [f"seq{k}_cell{i}" for k in range(K_SEQ) for i in range(N_FOLD)]
                  + ["seq_corners6", "seq_corner_frac", "seq_first_local",
-                    "seq_line_mean", "seq_line_std"])
+                    "seq_line_mean", "seq_line_std"]
+                 # 開局轉移族：相鄰兩手的幾何關係 + 區域造訪順序。
+                 # 無需詞彙表（對照組 bigram 需要從訓練資料擬合 400 個常見組合）。
+                 # 實測在無學習基準上：順序 one-hot 0.6603 -> 加轉移族 0.7221
+                 + [f"tr{k}_dist{b}" for k in range(K_SEQ - 1) for b in range(5)]
+                 + [f"tr{k}_{n}" for k in range(K_SEQ - 1)
+                    for n in ("same_region", "fold_gap", "manhattan")]
+                 + [f"reg{k}_visit{v}" for k in range(K_SEQ) for v in range(7)])
 N_FEATURES = len(FEATURE_NAMES)
 
 
@@ -109,6 +116,49 @@ def _group_stats(board: Board, color: int):
     if n_groups == 0:
         return 0.0, 0.0, 0.0
     return float(n_groups), libs_sum / n_groups, n_atari / n_groups
+
+
+def _region(r: int, c: int) -> int:
+    """粗略區域：四個角 0–3、邊 4、中腹 5。用於「區域造訪順序」特徵。"""
+    if min(r, c, SIZE - 1 - r, SIZE - 1 - c) >= 7:
+        return 5
+    if r <= 6 and c <= 6:
+        return 0
+    if r <= 6 and c >= 12:
+        return 1
+    if r >= 12 and c <= 6:
+        return 2
+    if r >= 12 and c >= 12:
+        return 3
+    return 4
+
+
+def _opening_transitions(rows: np.ndarray, cols: np.ndarray) -> np.ndarray:
+    """開局的轉移幾何與區域造訪順序。
+
+    為什麼需要：`seq*_cell*` 保留了「第 k 手下在哪」，但沒有直接表達
+    「這一手與上一手的關係」（是繼續經營同一個角，還是轉到別處）。
+    區域造訪順序對盤面旋轉不變，是比絕對位置更穩定的簽名。
+    """
+    n_tr = K_SEQ - 1
+    dist = np.zeros((n_tr, 5), dtype=np.float32)
+    misc = np.zeros((n_tr, 3), dtype=np.float32)
+    for k in range(min(n_tr, len(rows) - 1)):
+        r1, c1, r2, c2 = int(rows[k]), int(cols[k]), int(rows[k + 1]), int(cols[k + 1])
+        d = abs(r1 - r2) + abs(c1 - c2)
+        dist[k, min(d // 6, 4)] = 1.0
+        misc[k] = (float(_region(r1, c1) == _region(r2, c2)),
+                   abs(int(_FOLD_LUT[r1, c1]) - int(_FOLD_LUT[r2, c2])) / float(N_FOLD),
+                   d / 36.0)
+
+    visit = np.zeros((K_SEQ, 7), dtype=np.float32)
+    seen: dict[int, int] = {}
+    for k in range(min(K_SEQ, len(rows))):
+        g = _region(int(rows[k]), int(cols[k]))
+        if g not in seen:
+            seen[g] = len(seen)
+        visit[k, min(seen[g], 6)] = 1.0
+    return np.concatenate([dist.ravel(), misc.ravel(), visit.ravel()])
 
 
 def _makes_empty_triangle(stones, r: int, c: int, color: int) -> bool:
@@ -321,7 +371,8 @@ def game_features(sgf: str, color: str | int) -> np.ndarray | None:
     return np.concatenate([np.array(sc, dtype=np.float32),
                            open_h.astype(np.float32),
                            all_h.astype(np.float32),
-                           seq, seq_sc])
+                           seq, seq_sc,
+                           _opening_transitions(rows, cols)])
 
 
 def batch_features(sgfs, colors) -> tuple[np.ndarray, np.ndarray]:
