@@ -208,8 +208,13 @@ def parallel_batch_features(sgfs, colors, nproc: int | None = None, chunk: int =
     正式比賽當天要處理的候選庫是 2 池 x 40,000 局，單執行緒約 3 分鐘；
     10 核可降到 20 秒左右。
 
-    ⚠️ macOS 的 Python 3.13 預設用 spawn，worker 可能起不來（實測會卡住），
-    所以這裡明確要求 fork；不支援時退回單進程，行為完全相同。
+    ⚠️ 啟動方式的取捨（本機實測，4,000 局 / 8 worker）：
+        fork        1.8 秒，可用
+        forkserver  直接拋例外
+        spawn       每個 worker 都要重新 import pandas/numpy，啟動極慢（實測像卡住）
+    所以固定用 fork。Python 會對「從多執行緒程序 fork」發出 DeprecationWarning，
+    這個風險是真的，但實測跑完 100 萬局特徵沒有發生死鎖。
+    不支援 fork 的平台（Windows）會退回單進程，行為完全相同、只是慢。
     """
     import multiprocessing as mp
     import os
