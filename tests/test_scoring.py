@@ -151,3 +151,48 @@ def test_retrieval_report_fields():
     assert rep["official_score"] == 1.0
     assert rep["top1"] == 1.0 and rep["top5"] == 1.0
     assert rep["n_query"] == 10
+
+
+# ---------------- 聚合順序（實測增益最大的單一改動，鎖住避免被「簡化」掉） ----------------
+
+def test_player_template_normalises_each_game_before_averaging():
+    """template 必須是「單局標準化 -> 單局 L2 -> 平均 -> 再 L2」。
+
+    真實資料實測：改成「先平均再標準化」會從 0.6490 掉到 0.3886（-0.26），
+    比任何特徵工程的影響都大。這個測試鎖住正確的順序。
+    """
+    from aicup.baselines import PlayerBaseline
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(50, 8)) * np.array([100.0, 1, 1, 1, 1, 1, 1, 1])  # 第 0 維尺度極大
+    pb = PlayerBaseline().fit(X)
+    t = pb.template(X[:10])
+
+    # 正確順序：每一局先標準化並 L2，再平均
+    Z = (X[:10] - pb.mu) / pb.sd
+    Z = Z / np.linalg.norm(Z, axis=1, keepdims=True)
+    expect = Z.mean(0)
+    expect = expect / np.linalg.norm(expect)
+    assert np.allclose(t, expect)
+
+    # 錯誤順序（先平均再標準化）必須產生不同的結果
+    wrong = (X[:10].mean(0) - pb.mu) / pb.sd
+    wrong = wrong / np.linalg.norm(wrong)
+    assert not np.allclose(t, wrong)
+
+
+def test_player_template_is_unit_norm():
+    from aicup.baselines import PlayerBaseline
+    rng = np.random.default_rng(1)
+    X = rng.normal(size=(40, 12))
+    pb = PlayerBaseline().fit(X)
+    assert float(np.linalg.norm(pb.template(X[:7]))) == pytest.approx(1.0)
+
+
+def test_player_fit_uses_gallery_statistics_only():
+    """標準化統計量只能來自 gallery——用到 query 就是洩漏。"""
+    from aicup.baselines import PlayerBaseline
+    rng = np.random.default_rng(2)
+    gallery = rng.normal(size=(30, 6))
+    pb = PlayerBaseline().fit(gallery)
+    assert np.allclose(pb.mu, gallery.mean(0))
+    assert np.allclose(pb.sd, gallery.std(0) + pb.eps)
