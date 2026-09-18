@@ -1,0 +1,112 @@
+"""手工特徵的測試：維度一致、無 NaN、對稱不變、顏色語意正確。"""
+import numpy as np
+import pandas as pd
+import pytest
+
+from aicup.features import (
+    FEATURE_NAMES, N_FEATURES, N_FOLD, game_features, batch_features, _FOLD_LUT,
+)
+from aicup.goboard import SIZE
+
+
+@pytest.fixture(scope="module")
+def sample():
+    d = pd.read_csv("training/train_4D.csv", nrows=60)
+    return d
+
+
+def test_feature_names_match_length():
+    assert len(FEATURE_NAMES) == N_FEATURES
+    assert len(set(FEATURE_NAMES)) == N_FEATURES        # 不可有重複名稱
+
+
+def test_fold_table_is_8_fold_symmetric():
+    """折疊表必須對 8 種對稱等價的點給出同一個編號。"""
+    for r in range(SIZE):
+        for c in range(SIZE):
+            v = _FOLD_LUT[r, c]
+            for rr, cc in [(r, SIZE-1-c), (SIZE-1-r, c), (SIZE-1-r, SIZE-1-c),
+                           (c, r), (c, SIZE-1-r), (SIZE-1-c, r), (SIZE-1-c, SIZE-1-r)]:
+                assert _FOLD_LUT[rr, cc] == v
+
+
+def test_fold_has_55_cells():
+    assert N_FOLD == 55
+    assert len(np.unique(_FOLD_LUT)) == 55
+
+
+def test_features_shape_and_finite(sample):
+    X, ok = batch_features(sample.sgf_content.tolist(), sample.color.tolist())
+    assert X.shape == (len(sample), N_FEATURES)
+    assert ok.all()
+    assert np.isfinite(X).all()
+
+
+def test_histograms_sum_to_one(sample):
+    X, ok = batch_features(sample.sgf_content.tolist(), sample.color.tolist())
+    i0 = FEATURE_NAMES.index("open_cell0")
+    i1 = FEATURE_NAMES.index("all_cell0")
+    assert np.allclose(X[ok, i0:i0 + N_FOLD].sum(axis=1), 1.0, atol=1e-5)
+    assert np.allclose(X[ok, i1:i1 + N_FOLD].sum(axis=1), 1.0, atol=1e-5)
+
+
+def test_is_black_flag_matches_color(sample):
+    X, ok = batch_features(sample.sgf_content.tolist(), sample.color.tolist())
+    i = FEATURE_NAMES.index("is_black")
+    expect = (sample.color.to_numpy() == "B").astype(float)
+    assert np.allclose(X[ok, i], expect[ok])
+
+
+def test_swapping_color_changes_features(sample):
+    """同一局棋，站在黑方與白方的角度看，特徵必須不同。"""
+    sgf = sample.sgf_content.iloc[0]
+    a = game_features(sgf, "B")
+    b = game_features(sgf, "W")
+    assert not np.allclose(a, b)
+
+
+def test_capture_features_are_consistent(sample):
+    """己方提子 + 對方提子，不可能超過總手數。"""
+    X, ok = batch_features(sample.sgf_content.tolist(), sample.color.tolist())
+    made = X[ok, FEATURE_NAMES.index("captures_made")]
+    taken = X[ok, FEATURE_NAMES.index("captures_taken")]
+    n = X[ok, FEATURE_NAMES.index("n_moves")]
+    assert (made >= 0).all() and (taken >= 0).all()
+    assert (made + taken <= n).all()
+
+
+def test_stone_ratio_in_unit_interval(sample):
+    X, ok = batch_features(sample.sgf_content.tolist(), sample.color.tolist())
+    r = X[ok, FEATURE_NAMES.index("stone_ratio")]
+    assert ((r >= 0) & (r <= 1)).all()
+
+
+def test_liberty_means_are_plausible(sample):
+    """圍棋棋串的平均氣數實務上落在 1~10 之間。"""
+    X, ok = batch_features(sample.sgf_content.tolist(), sample.color.tolist())
+    for name in ("my_libs_mean", "opp_libs_mean"):
+        v = X[ok, FEATURE_NAMES.index(name)]
+        assert (v > 0.5).all() and (v < 12).all()
+
+
+def test_rates_are_within_unit_interval(sample):
+    X, ok = batch_features(sample.sgf_content.tolist(), sample.color.tolist())
+    for name in ("resp_local", "resp_far", "my_atari_rate", "opp_atari_rate",
+                 "center_frac", "endgame_line01"):
+        v = X[ok, FEATURE_NAMES.index(name)]
+        assert ((v >= 0) & (v <= 1)).all(), name
+
+
+def test_too_short_game_returns_none():
+    assert game_features("(;SZ[19];B[dd];W[pp])", "B") is None
+
+
+def test_malformed_sgf_is_handled():
+    X, ok = batch_features(["garbage", "(;SZ[19])"], ["B", "W"])
+    assert not ok.any()
+    assert np.isfinite(X).all()
+
+
+def test_deterministic(sample):
+    sgf, col = sample.sgf_content.iloc[3], sample.color.iloc[3]
+    assert np.array_equal(game_features(sgf, col), game_features(sgf, col))
