@@ -227,6 +227,17 @@ Top-5 必須相異、且 `pub_` 題目只能填 `pub_p_` 開頭的玩家（跨�
 
 `aicup.submission` 把這些規則寫成會丟例外的驗證函數，驗證不過就不寫檔。
 
+## 沒有本機 GPU？
+
+見 **[COLAB.md](COLAB.md)**。重點：
+
+- **競賽一不需要 GPU** —— 手工特徵純 CPU 已達官方 baseline 的 2.36 倍
+- **競賽二需要 GPU** —— 手工特徵在 0.38~0.40 觸頂
+- **資料管線不是瓶頸**：盤面抽取單核 1,202 局/秒，一個訓練步只要 0.05 秒 CPU，
+  Colab 免費版的 2 核就能供到約 37 步/秒，遠超過 T4 能消化的量
+- `train.py --resume` 可從斷線處接回（還原模型 / ArcFace head / optimizer / scheduler）
+- 建議優先用 **Kaggle Notebooks**（4 核、12 小時、每週 30 GPU 小時），Colab 當備援
+
 ## 測試
 
 ```bash
