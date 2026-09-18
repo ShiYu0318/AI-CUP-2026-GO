@@ -157,3 +157,29 @@ def test_load_sgf_returns_matching_rows(meta, split):
     assert len(sgf) == 50
     assert sgf.notna().all()
     assert sgf.str.startswith("(;SZ[19]").all()
+
+
+# ---------------- 資料排列的陷阱 ----------------
+
+def test_csv_rows_are_sorted_by_color():
+    """官方 CSV 依執色排序：前 50,000 列全 B、後 50,000 列全 W。
+
+    這是個沉默的陷阱——用 nrows=N (N<=50000) 做快速實驗會拿到 100% 執黑樣本。
+    任何抽樣都必須先 shuffle 或跨越第 50,000 列的分界。
+    """
+    import pandas as pd
+    head = pd.read_csv("training/train_3D.csv", nrows=5, usecols=["color"])
+    tail = pd.read_csv("training/train_3D.csv", skiprows=range(1, 50_001),
+                       nrows=5, usecols=["color"])
+    assert set(head["color"]) == {"B"}
+    assert set(tail["color"]) == {"W"}
+
+
+def test_split_and_questions_are_not_color_biased(meta, split):
+    """驗證框架本身必須不受上述排列影響——抽樣後黑白應接近各半。"""
+    import numpy as np
+    q = build_rank_questions(meta, split, n_per_player=1, seed=0, max_questions=400)
+    colors = meta["color"].to_numpy()
+    all_rows = np.concatenate(q.game_rows)
+    frac_black = float((colors[all_rows] == "B").mean())
+    assert 0.40 < frac_black < 0.60
