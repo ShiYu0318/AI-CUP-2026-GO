@@ -130,6 +130,15 @@ def main() -> int:
     with open(out, "w") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
     print(f"\n報告已寫出：{out}", flush=True)
+
+    # 追加到統一的實驗記錄，讓每個分數都能回溯到當時的程式碼
+    from aicup.experiment_log import log_experiment
+    log_experiment("rank", "handcrafted_baseline", vars(args),
+                   {"official": report["rank"]["logmean"]["score_expected"],
+                    "single_game_top1": report["rank"]["single_game_top1"]})
+    log_experiment("player", "handcrafted_baseline", vars(args),
+                   {c: report["player"][c]["score_mean"] for c in report["player"]})
+    print("已追加到 cache/experiments.csv", flush=True)
     return 0
 
 
