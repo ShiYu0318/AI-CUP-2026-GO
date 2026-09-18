@@ -219,3 +219,70 @@ def test_batched_question_proba_matches_per_question_loop():
         m.aggregate(m.game_proba(X), "mean") if len(X) else np.full(10, 0.1)
         for X in feats])
     assert np.allclose(batched, manual)
+
+
+# ---------------- GBDT 集成 ----------------
+
+def test_player_group_folds_keep_player_together():
+    """同一位玩家的所有棋局必須落在同一個 fold——否則 OOF 被身分洩漏污染。"""
+    from aicup.gbdt import player_group_folds
+    rng = np.random.default_rng(0)
+    pid = np.repeat([f"p{i}" for i in range(80)], 15)
+    rk = np.repeat(rng.integers(0, 10, 80), 15)
+    folds = player_group_folds(pid, rk, n_folds=5, seed=1)
+    for p in np.unique(pid):
+        assert len(set(folds[pid == p])) == 1
+
+
+def test_player_group_folds_are_stratified_by_rank():
+    """每個 fold 都應涵蓋所有等級，否則某些 fold 學不到某些類別。"""
+    from aicup.gbdt import player_group_folds
+    rng = np.random.default_rng(1)
+    pid = np.repeat([f"p{i}" for i in range(200)], 5)
+    rk = np.repeat(rng.integers(0, 10, 200), 5)
+    folds = player_group_folds(pid, rk, n_folds=5, seed=0)
+    for f in range(5):
+        assert len(set(rk[folds == f])) >= 8
+
+
+def test_available_backends_always_has_hist():
+    from aicup.gbdt import available_backends
+    assert "hist" in available_backends()
+
+
+def test_weighted_blend_normalises():
+    from aicup.gbdt import weighted_blend
+    a = np.array([[0.8, 0.2]]); b = np.array([[0.2, 0.8]])
+    out = weighted_blend({"a": a, "b": b}, {"a": 3.0, "b": 1.0})
+    assert np.allclose(out.sum(1), 1.0)
+    assert out[0, 0] == pytest.approx(0.65)
+
+
+def test_weighted_blend_falls_back_to_mean_on_zero_weights():
+    from aicup.gbdt import weighted_blend
+    a = np.array([[1.0, 0.0]]); b = np.array([[0.0, 1.0]])
+    out = weighted_blend({"a": a, "b": b}, {"a": 0.0, "b": 0.0})
+    assert np.allclose(out, [[0.5, 0.5]])
+
+
+def test_optimise_weights_finds_better_than_uniform():
+    """b 完全正確、a 完全錯誤時，搜尋出的權重必須偏向 b。"""
+    from aicup.gbdt import optimise_weights, weighted_blend
+    y = np.array([0, 1, 0, 1])
+    good = np.eye(2)[y]
+    bad = np.eye(2)[1 - y]
+    w = optimise_weights({"a": bad, "b": good},
+                         lambda p: float((p.argmax(1) == y).mean()), n_iter=200)
+    assert w["b"] > w["a"]
+
+
+def test_stacking_blender_roundtrip():
+    from aicup.gbdt import StackingBlender
+    rng = np.random.default_rng(0)
+    y = rng.integers(0, 3, 200)
+    oofs = {"a": np.eye(3)[y] * 0.7 + 0.1, "b": rng.dirichlet(np.ones(3), 200)}
+    st = StackingBlender().fit(oofs, y)
+    p = st.predict_proba(oofs)
+    assert p.shape == (200, 3)
+    assert np.allclose(p.sum(1), 1.0)
+    assert (p.argmax(1) == y).mean() > 0.8
