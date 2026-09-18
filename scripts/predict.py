@@ -98,6 +98,9 @@ def main() -> int:
     ap.add_argument("--temperature", type=float, default=0.5,
                     help="題目後驗的溫度；<1 為銳化。實測最佳 0.5~0.6")
     ap.add_argument("--aggregation", default="logmean", choices=["mean", "logmean"])
+    ap.add_argument("--rank-mlp", default="cache/rank_mlp/models.pt",
+                    help="競賽二的 MLP 集成。實測勝過 GBDT（0.4351 -> 0.4663，"
+                         "已超過官方 baseline 0.4631）。設為空字串則退回 GBDT")
     ap.add_argument("--feature-metric", default="cache/feature_metric/models.pt",
                     help="競賽一的度量學習模型（目前增益最大：0.6630 -> 0.8125）。"
                          "設為空字串則退回「標準化+L2」的無學習版本")
@@ -123,7 +126,26 @@ def main() -> int:
     print("=" * 60, flush=True)
     print("競賽二：棋力預測", flush=True)
     print("=" * 60, flush=True)
-    model = _fit_rank_model("cache/rank_model.pkl", args.train_per_rank)
+    rank_mlp = None
+    if args.rank_mlp and os.path.exists(args.rank_mlp):
+        import torch
+        from aicup.feature_metric import FeatureScaler
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from train_rank_mlp import RankMLP, question_posteriors
+        rdev = torch.device("cuda" if torch.cuda.is_available() else
+                            "mps" if torch.backends.mps.is_available() else "cpu")
+        ck = torch.load(args.rank_mlp, map_location=rdev, weights_only=False)
+        rsc = FeatureScaler().load_state_dict(ck["scaler"])
+        nets = []
+        for sd in ck["models"]:
+            n = RankMLP(len(rsc.mu), hidden=ck["args"]["hidden"])
+            n.load_state_dict(sd); n.eval().to(rdev)
+            nets.append(n)
+        rank_mlp = (nets, rsc, rdev, question_posteriors)
+        print(f"  競賽二使用 MLP 集成（{len(nets)} 個模型，device={rdev}）", flush=True)
+
+    model = None if rank_mlp else _fit_rank_model("cache/rank_model.pkl",
+                                                  args.train_per_rank)
 
     # 切點與溫度都在「held-out 玩家的模擬題目」上校準，與測試集完全無關
     calib = None
@@ -135,8 +157,12 @@ def main() -> int:
         _meta = load_metadata()
         _sp = _mps(_meta, val_frac=0.20, seed=42)
         _q = _brq(_meta, _sp, n_per_player=3, seed=0)
-        _P = model.question_proba(
-            [np.asarray(_X[r[_ok[r]]]) for r in _q.game_rows], args.aggregation)
+        if rank_mlp:
+            nets, rsc, rdev, qpost = rank_mlp
+            _P = qpost(nets, rsc, _X, _ok, _q.game_rows, rdev)
+        else:
+            _P = model.question_proba(
+                [np.asarray(_X[r[_ok[r]]]) for r in _q.game_rows], args.aggregation)
         _lo = np.log(np.clip(_P, 1e-12, None))
         _T = fit_temperature(_lo, _q.true_rank_id)
         _th = optimise_thresholds(
@@ -151,7 +177,29 @@ def main() -> int:
         df = pd.read_csv(path)
         t0 = time.time()
         feats = _question_features(df)
-        P = model.question_proba(feats, how=args.aggregation)
+        if rank_mlp:
+            nets, rsc, rdev, _ = rank_mlp
+            import torch as _t
+            from aicup.losses import corn_to_proba as _c2p
+            P = []
+            with _t.no_grad():
+                for A in feats:
+                    if len(A) == 0:
+                        P.append(np.full(10, 0.1)); continue
+                    t = _t.from_numpy(rsc.transform(A)).to(rdev)
+                    ps = []
+                    for n in nets:
+                        lc, lo2 = n(t)
+                        p = _t.softmax(lc, dim=-1).cpu().numpy()
+                        pc = _c2p(lo2).cpu().numpy()
+                        pc = pc / np.maximum(pc.sum(axis=1, keepdims=True), 1e-12)
+                        ps.append(0.5 * p + 0.5 * pc)
+                    p = np.mean(ps, axis=0)
+                    g = np.exp(np.log(np.clip(p, 1e-12, None)).mean(axis=0))
+                    P.append(g / g.sum())
+            P = np.stack(P)
+        else:
+            P = model.question_proba(feats, how=args.aggregation)
         lo = np.log(np.clip(P, 1e-12, None))
         if args.decode == "threshold":
             T, th = calib
