@@ -229,7 +229,10 @@ Top-5 必須相異、且 `pub_` 題目只能填 `pub_p_` 開頭的玩家（跨�
 
 ## 沒有本機 GPU？
 
-見 **[COLAB.md](COLAB.md)**。重點：
+**現成的 Kaggle notebook：[`notebooks/kaggle_train.ipynb`](notebooks/kaggle_train.ipynb)**
+（上傳到 Kaggle → Settings 開 GPU 與 Internet → Save & Run All (Commit) 即可跑 12 小時）。
+
+背景說明見 **[COLAB.md](COLAB.md)**。重點：
 
 - **競賽一不需要 GPU** —— 手工特徵純 CPU 已達官方 baseline 的 2.36 倍
 - **競賽二需要 GPU** —— 手工特徵在 0.38~0.40 觸頂
