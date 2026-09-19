@@ -21,15 +21,23 @@ import numpy as np
 from . import N_LEVELS
 
 
-def available_backends() -> list[str]:
-    """回傳這台機器上實際可用的 GBDT 實作。"""
+def available_backends(verbose: bool = False) -> list[str]:
+    """回傳這台機器上實際可用的 GBDT 實作。
+
+    ⚠️ 這裡攔的是 `Exception`，不是只有 `ImportError`。
+    套件「裝好了但載不起來」是很常見的情況：例如 macOS 上
+    `pip install lightgbm` 會成功，但 import 時才會因為缺 `libomp.dylib`
+    丟 `OSError`。只攔 ImportError 的話，整條預測管線會在比賽當天直接崩掉，
+    而不是安靜地少用一個 backend。
+    """
     out = ["hist"]                       # sklearn 一定有
     for name, mod in (("lgbm", "lightgbm"), ("xgb", "xgboost"), ("cat", "catboost")):
         try:
             __import__(mod)
             out.append(name)
-        except ImportError:
-            pass
+        except Exception as e:           # noqa: BLE001 —— 見上方說明
+            if verbose:
+                print(f"  backend {name} 不可用：{type(e).__name__}: {e}")
     return out
 
 

@@ -398,3 +398,28 @@ def test_optimise_thresholds_is_globally_optimal_on_tiny_case():
     mids = np.concatenate([[s[0] - 1], (s[:-1] + s[1:]) / 2, [s[-1] + 1]])
     brute = max(score(c) for c in itertools.combinations(mids, n_levels - 1))
     assert best >= brute - 1e-9, f"DP {best} 低於暴力最佳 {brute}"
+
+
+def test_available_backends_survives_broken_install():
+    """套件『裝好了但載不起來』時，只能少一個 backend，不能讓整支管線崩掉。
+
+    真實情況：macOS 上 `pip install lightgbm` 會成功，但 import 時因為缺
+    `libomp.dylib` 丟 OSError（不是 ImportError）。早期版本只攔 ImportError，
+    等於在比賽當天才會炸。
+    """
+    import builtins
+
+    from aicup.gbdt import available_backends
+
+    real_import = builtins.__import__
+
+    def boom(name, *a, **kw):
+        if name in ("lightgbm", "xgboost", "catboost"):
+            raise OSError("dlopen: libomp.dylib not found")
+        return real_import(name, *a, **kw)
+
+    builtins.__import__ = boom
+    try:
+        assert available_backends() == ["hist"]
+    finally:
+        builtins.__import__ = real_import
