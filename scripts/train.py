@@ -62,13 +62,15 @@ def evaluate_rank(model, meta, questions, device, n_snapshots: int, max_q: int =
     n = min(max_q, len(ds))
     loader = DataLoader([ds[i] for i in range(n)], batch_size=8,
                         collate_fn=collate_questions)
+    was_training = model.training      # 還原原本的模式，不要無條件切回 train
     model.eval()
     probs, ys = [], []
-    for x, mask, y in loader:
-        out = model.forward_set(x.to(device), mask.to(device))
-        probs.append(F.softmax(out["rank_logits"], dim=-1).cpu().numpy())
-        ys.append(y.numpy())
-    model.train()
+    with torch.no_grad():              # 少了這個會在 GPU 上白白累積計算圖，800 題足以 OOM
+        for x, mask, y in loader:
+            out = model.forward_set(x.to(device), mask.to(device))
+            probs.append(F.softmax(out["rank_logits"], dim=-1).cpu().numpy())
+            ys.append(y.numpy())
+    model.train(was_training)
     P = np.concatenate(probs); Y = np.concatenate(ys)
     return {
         "score_argmax": rank_final_score(decode_argmax(P), Y),
