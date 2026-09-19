@@ -302,3 +302,67 @@ class MultiTaskGoNet(nn.Module):
 
 def count_parameters(model: nn.Module) -> int:
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+# ---------------------------------------------------------------------------
+# checkpoint 的存/取
+# ---------------------------------------------------------------------------
+
+def gonet_config(model: "MultiTaskGoNet") -> dict:
+    """把重建這個模型所需的**全部**參數抓出來，存進 checkpoint。
+
+    ⚠️ 只存 `vars(args)` 是不夠的。實際踩過：舊的 checkpoint 沒記錄
+    `pool` 與 `global_pool_bias`，重新載入時只能猜，猜錯了
+    `load_state_dict(strict=False)` 還會安靜放過——整個 pooling head
+    變成隨機初始化，模型看起來能跑、分數只是「比較差」。
+    用這個函式存、用 `load_gonet` 取，就不會有這個問題。
+    """
+    trunk = model.trunk
+    return {
+        "in_channels": trunk.stem[0].in_channels,
+        "width": trunk.stem[0].out_channels,
+        "blocks": len(trunk.blocks),
+        "embed_dim": model.rank_head.in_features,
+        "n_levels": model.rank_head.out_features,
+        "n_quality": (model.quality_head.out_features if model.quality_head else 0),
+        "pool": model.pool_kind,
+        "global_pool_bias": any("gpb" in k for k, _ in model.named_parameters()),
+        "transformer_every": sum(1 for b in trunk.blocks
+                                 if isinstance(b, BoardTransformerBlock)),
+    }
+
+
+def load_gonet(state_dict: dict, config: dict | None = None) -> "MultiTaskGoNet":
+    """從 state_dict 重建 MultiTaskGoNet，並**嚴格**載入。
+
+    `config` 是 `gonet_config` 存下來的設定。舊的 checkpoint 沒有它，
+    這時從鍵名反推 `pool` 與 `global_pool_bias`（其餘由張量形狀推得）。
+    一律 `strict=True`：寧可當場炸掉，也不要載進一個半隨機的模型。
+    """
+    cfg = dict(config or {})
+    if "pool" not in cfg:
+        cfg["pool"] = ("set_transformer"
+                       if any(k.startswith("set_pool.mab") for k in state_dict)
+                       else "attention")
+    if "global_pool_bias" not in cfg:
+        cfg["global_pool_bias"] = any("gpb" in k for k in state_dict)
+    if "width" not in cfg:
+        cfg["width"] = state_dict["trunk.stem.0.weight"].shape[0]
+        cfg["in_channels"] = state_dict["trunk.stem.0.weight"].shape[1]
+    if "embed_dim" not in cfg:
+        cfg["embed_dim"] = state_dict["rank_head.weight"].shape[1]
+    if "n_levels" not in cfg:
+        cfg["n_levels"] = state_dict["rank_head.weight"].shape[0]
+    if "n_quality" not in cfg:
+        cfg["n_quality"] = (state_dict["quality_head.weight"].shape[0]
+                            if "quality_head.weight" in state_dict else 0)
+    if "blocks" not in cfg:
+        import re
+        idx = [int(m.group(1)) for k in state_dict
+               if (m := re.match(r"trunk\.blocks\.(\d+)\.", k))]
+        cfg["blocks"] = max(idx) + 1 if idx else 0
+    cfg.setdefault("transformer_every", 0)
+
+    model = MultiTaskGoNet(**cfg)
+    model.load_state_dict(state_dict, strict=True)      # 不容許靜默缺權重
+    return model

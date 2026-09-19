@@ -34,7 +34,8 @@ from aicup.data import load_metadata, make_player_split            # noqa: E402
 from aicup.benchmark import build_rank_questions                   # noqa: E402
 from aicup.dataset import GameDataset, PKPlayerSampler             # noqa: E402
 from aicup.losses import SoftLabelCrossEntropy, CornLoss, SubCenterArcFace  # noqa: E402
-from aicup.nets import MultiTaskGoNet, count_parameters            # noqa: E402
+from aicup.nets import (MultiTaskGoNet, count_parameters,           # noqa: E402
+                        gonet_config)
 from aicup.scoring import decode_expected_score, decode_argmax, rank_final_score  # noqa: E402
 
 
@@ -266,6 +267,9 @@ def main() -> int:
             if ev["score_expected"] > best:
                 best = ev["score_expected"]
                 torch.save({"model": model.state_dict(), "args": vars(args),
+                            # 重建模型所需的完整設定。只存 args 是不夠的——
+                            # pool / global_pool_bias 曾經漏存，害重新載入時只能猜。
+                            "config": gonet_config(model),
                             "score": best},
                            os.path.join(args.out, "best.pt"))
 
@@ -276,6 +280,7 @@ def main() -> int:
             torch.save({"model": model.state_dict(), "arc": arc.state_dict(),
                         "opt": opt.state_dict(), "sched": sched.state_dict(),
                         "step": step, "best": best, "history": history,
+                        "config": gonet_config(model),
                         "args": vars(args)}, last_path)
         if out_of_time:
             print(f"\n已達時間預算 {args.max_hours} 小時，於第 {step:,} 步存檔結束。"

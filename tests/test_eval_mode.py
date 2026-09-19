@@ -111,3 +111,57 @@ def test_embed_features_deterministic_across_calls():
     a = embed_features(m, sc, X, torch.device("cpu"))
     b = embed_features(m, sc, X, torch.device("cpu"))
     assert np.abs(a - b).max() == 0.0
+
+
+# ---------------------------------------------------------------------------
+# checkpoint 必須足以重建模型
+#
+# 真實情況：舊的 checkpoint 只存了 `vars(args)`，而 args 裡沒有 `pool`
+# 與 `global_pool_bias`。重新載入時只能猜，猜錯了 `strict=False` 還會
+# 安靜放過——整個 pooling head 變成隨機初始化，模型照跑，分數只是「比較差」。
+# ---------------------------------------------------------------------------
+
+def _roundtrip(**kw):
+    from aicup.nets import MultiTaskGoNet, gonet_config, load_gonet
+
+    m = MultiTaskGoNet(in_channels=8, width=8, blocks=2, embed_dim=16, **kw)
+    cfg = gonet_config(m)
+    back = load_gonet(m.state_dict(), cfg)          # strict=True，缺權重會拋錯
+    for (ka, va), (kb, vb) in zip(sorted(m.state_dict().items()),
+                                  sorted(back.state_dict().items())):
+        assert ka == kb and torch.equal(va, vb)
+    return cfg
+
+
+@pytest.mark.parametrize("pool", ["set_transformer", "attention"])
+@pytest.mark.parametrize("gpb", [True, False])
+def test_gonet_config_roundtrip(pool, gpb):
+    cfg = _roundtrip(pool=pool, global_pool_bias=gpb)
+    assert cfg["pool"] == pool and cfg["global_pool_bias"] == gpb
+
+
+@pytest.mark.parametrize("pool", ["set_transformer", "attention"])
+@pytest.mark.parametrize("gpb", [True, False])
+def test_load_gonet_infers_config_from_keys(pool, gpb):
+    """舊 checkpoint 沒有 config 時，必須從鍵名正確反推，而不是用預設值。"""
+    from aicup.nets import MultiTaskGoNet, load_gonet, gonet_config
+
+    m = MultiTaskGoNet(in_channels=8, width=8, blocks=2, embed_dim=16,
+                       pool=pool, global_pool_bias=gpb)
+    back = load_gonet(m.state_dict())               # 不給 config
+    got = gonet_config(back)
+    assert got["pool"] == pool and got["global_pool_bias"] == gpb
+
+
+def test_load_gonet_refuses_mismatched_config():
+    """給錯 config 必須拋錯，不可以靜默載入一個半隨機的模型。"""
+    from aicup.nets import MultiTaskGoNet, load_gonet
+
+    m = MultiTaskGoNet(in_channels=8, width=8, blocks=2, embed_dim=16,
+                       pool="attention")
+    with pytest.raises(RuntimeError):
+        load_gonet(m.state_dict(), {"in_channels": 8, "width": 8, "blocks": 2,
+                                    "embed_dim": 16, "n_levels": 10, "n_quality": 0,
+                                    "pool": "set_transformer",
+                                    "global_pool_bias": False,
+                                    "transformer_every": 0})
