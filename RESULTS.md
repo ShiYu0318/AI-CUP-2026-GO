@@ -189,7 +189,8 @@ Sinkhorn 是軟性平衡，三種情境下**都不會變差**，最差只是持�
 | 09-19 | ＋**題目層級模型融合**（w=0.2） | 0.4778 | |
 | 09-19 | 單局模型放大（5 seed / 78 萬局、hidden 1024、20k 步） | 0.4793 | 訓練約 1.7 小時 |
 | 09-19 | ＋**DP 最佳化切點**（取代 Nelder-Mead） | **0.4895 ±0.0090** | 8 組 player-disjoint，8/8 |
-| 09-19 | **端到端**（`predict.py`，修完 dropout bug 後） | **0.4720** | 修之前只有 0.3321 |
+| 09-19 | **端到端**（`predict.py`，修完 dropout bug 後） | 0.4720 | 修之前只有 0.3321 |
+| 09-20 | ＋**對手視角**（1178 維單局 + 1178 維題目模型，5 seed / 78 萬局） | **0.5402 ±0.0085** | +0.0507（8/8 勝，t=14.84）；**端到端 0.5389** |
 
 ### 2.1b 對手視角特徵：一個完全沒被用到的資訊源（2026-09-20）
 
@@ -230,15 +231,30 @@ Sinkhorn 是軟性平衡，三種情境下**都不會變差**，最差只是持�
 
 標準差也從 ±0.0143 收斂到 ±0.0088，代表對手特徵不只提高平均，還降低了變異。
 
+#### 全量管線的最終數字（8 組 player-disjoint）
+
+| 配置 | 分數 | 超過 baseline |
+|---|---:|---|
+| 舊：589 單局 + 589 題目 | 0.4895 ±0.0090 | 8/8 |
+| 1178 單局 **單獨** | 0.5271 ±0.0123 | 8/8 |
+| 1178 單局 + **舊**題目模型 | 0.5194 ±0.0098 | 8/8 |
+| **新：1178 單局 + 1178 題目** | **0.5402 ±0.0085** | **8/8（+0.0507，t=14.84）** |
+
+⚠️ 注意第 2、3 列：單局模型變強之後，**只吃 589 維的舊題目模型變成拖累**
+（0.5271 → 0.5194）。題目層級模型必須跟著一起重訓，
+否則融合權重 w=0.2 會把一個相對變弱的成分放進來。
+
+**端到端 0.5389**（模擬測試集 800 題），與內部驗證的 0.5402 幾乎一致。
+
 #### 重現
 
 ```bash
 python3 scripts/build_feature_store.py --opponent          # 10 分，產出 features_opp.npy
 python3 scripts/train_rank_mlp.py --extra-features cache/features_opp.npy \
     --seeds 5 --steps 20000 --hidden 1024 --train-games 0 --out cache/rank_mlp_opp_big
-python3 scripts/predict.py --test-dir mock_tests \
-    --rank-mlp cache/rank_mlp_opp_big/models.pt \
-    --extra-features cache/features_opp.npy
+python3 scripts/train_rank_question.py --extra-features cache/features_opp.npy \
+    --seeds 3 --game-model cache/rank_mlp_opp_big/models.pt --out cache/rank_question_opp
+python3 scripts/predict.py --test-dir mock_tests        # 以上三者已是預設
 ```
 
 ⚠️ 推論時 `--extra-features` 必須與訓練時完全一致，否則維度對不上。

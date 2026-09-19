@@ -153,16 +153,16 @@ def main() -> int:
     ap.add_argument("--temperature", type=float, default=0.5,
                     help="題目後驗的溫度；<1 為銳化。實測最佳 0.5~0.6")
     ap.add_argument("--aggregation", default="logmean", choices=["mean", "logmean"])
-    ap.add_argument("--rank-question", default="cache/rank_question/models.pt",
+    ap.add_argument("--rank-question", default="cache/rank_question_opp/models.pt",
                     help="競賽二的題目層級模型，與單局模型幾何融合（權重存在 "
                          "checkpoint 裡，目前 0.2）。8 組切分掃過 w=0~0.4，"
                          "0.2 就是最佳且變異最小（0.4895±0.0090）。"
                          "它單獨只有 0.4495、比單局模型還差，但看的是 5~20 局"
                          "之間的變異，所以融合有增益——弱但互補")
-    ap.add_argument("--rank-mlp", default="cache/rank_mlp_big/models.pt",
+    ap.add_argument("--rank-mlp", default="cache/rank_mlp_opp_big/models.pt",
                     help="競賽二的單局 MLP 集成。8 組 player-disjoint 切分實測："
-                         "rank_mlp_big（5 seed / 78 萬局）0.4895±0.0090（8/8 超過 "
-                         "baseline）勝過 rank_mlp（3 seed / 30 萬局）0.4783±0.0124。"
+                         "1178 維（含對手視角）0.5402±0.0085 勝過 589 維的 0.4895±0.0090"
+                         "（+0.0507，8/8 勝，t=14.84）。"
                          "設為空字串則退回 GBDT（0.4351，不建議）")
     ap.add_argument("--feature-metric", default="cache/feature_metric/models.pt",
                     help="競賽一的度量學習模型（目前增益最大：0.6630 -> 0.8125）。"
@@ -172,7 +172,8 @@ def main() -> int:
                          "對手工餘弦有 +0.0211，但對度量學習的 embedding 無效甚至有害"
                          "（實測平均 -0.003），所以預設停用。"
                          "只有在 --feature-metric 留空時才建議啟用 cache/stage2/model.pkl")
-    ap.add_argument("--extra-features", nargs="*", default=[],
+    ap.add_argument("--extra-features", nargs="*",
+                    default=["cache/features_opp.npy"],
                     help="競賽二額外的特徵庫，必須與訓練時完全一致。"
                          "`cache/features_opp.npy` 是對手視角（同盤棋、執色反轉）："
                          "伺服器把你配對給實力相近的人，對手的表現反映配對分級，"
