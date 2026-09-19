@@ -65,7 +65,15 @@ def pick_device(name: str):
 
 @torch.no_grad()
 def question_posteriors(nets, scaler, X, ok, game_rows, device, batch: int = 4096):
-    """逐題：多局後驗做幾何平均（實測 logmean 勝過算術平均 +0.030）。"""
+    """逐題：多局後驗做幾何平均（實測 logmean 勝過算術平均 +0.030）。
+
+    ⚠️ 這個函式會暫時把模型切到 eval，結束時**還原成原本的模式**。
+    早期版本結尾是無條件 `n.train()`，害 predict.py 在校準之後
+    帶著 dropout 跑測試集推論：校準在 eval、預測在 train，
+    期望等級的標準差從 2.16 被壓到 0.25，切點完全遷移不過去
+    （端到端 0.33，內部驗證卻有 0.48）。
+    """
+    was_training = [n.training for n in nets]
     for n in nets:
         n.eval()
     out = []
@@ -84,8 +92,8 @@ def question_posteriors(nets, scaler, X, ok, game_rows, device, batch: int = 409
         p = np.mean(ps, axis=0)
         g = np.exp(np.log(np.clip(p, 1e-12, None)).mean(axis=0))
         out.append(g / g.sum())
-    for n in nets:
-        n.train()
+    for n, t in zip(nets, was_training):
+        n.train(t)
     return np.stack(out)
 
 

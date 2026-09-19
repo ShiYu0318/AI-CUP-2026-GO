@@ -242,6 +242,8 @@ def main() -> int:
         feats = _question_features(df)
         if rank_mlp:
             nets, rsc, rdev, _ = rank_mlp
+            for _n in nets:                 # 保險：推論一律 eval（dropout 關閉）
+                _n.eval()
             import torch as _t
             from aicup.losses import corn_to_proba as _c2p
             P = []
