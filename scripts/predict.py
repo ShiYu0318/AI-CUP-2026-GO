@@ -159,6 +159,13 @@ def main() -> int:
                          "對手工餘弦有 +0.0211，但對度量學習的 embedding 無效甚至有害"
                          "（實測平均 -0.003），所以預設停用。"
                          "只有在 --feature-metric 留空時才建議啟用 cache/stage2/model.pkl")
+    ap.add_argument("--sinkhorn", type=float, default=0.0075,
+                    help="競賽一的全域指派強度（0 = 關閉）。官方每池 400 題 / 400 候選，"
+                         "每題獨立 argmax 沒用到這個全域約束。15 次評估實測 "
+                         "0.9233 → 0.9552（+0.0319，15/15 勝）。"
+                         "eps 是用**最壞情境**挑的：0.0075 是唯一在「完美一一對應 / "
+                         "三成干擾項 / 兩成五答案重複」三種情境下都為正的值；"
+                         "匈牙利算法在最後一種會掉 -0.0964，故不採用")
     ap.add_argument("--decode", default="threshold",
                     choices=["threshold", "expected", "argmax"],
                     help="解碼方式。實測（5 次獨立切分）：最佳化切點 0.4336±0.0032 > "
@@ -357,6 +364,18 @@ def main() -> int:
             sim = rerank_scores(st["model"], sim, top_n=st["top_n"],
                                 query_sizes=qn, gallery_sizes=gn)
             print(f"  已套用 Stage-2 重排（Top-{st['top_n']} → Top-5）", flush=True)
+        if args.sinkhorn > 0:
+            from aicup.rerank import sinkhorn_assignment, bijection_consistency
+            before = bijection_consistency(sim)
+            sim = sinkhorn_assignment(sim, eps=args.sinkhorn)
+            print(f"  已套用 Sinkhorn 全域指派（eps={args.sinkhorn}）："
+                  f"top-1 相異率 {before:.3f} → {bijection_consistency(sim):.3f}",
+                  flush=True)
+            if before < 0.60:
+                print("  ⚠️ 套用前的相異率偏低，代表第一階段檢索很弱，"
+                      "或『每位候選正好是一題的答案』不成立。"
+                      "實測基礎 Top-1 < 0.4 時 Sinkhorn 會變成負增益——"
+                      "請考慮 --sinkhorn 0 關閉。", flush=True)
         top5 = top_k_from_similarity(sim, names, k=5)
         all_qids.extend(df["question_id"].tolist()); all_top5.extend(top5.tolist())
         all_truth.extend([answers["player"].get(q) for q in df["question_id"]])

@@ -127,3 +127,86 @@ def rerank_similarity(query_emb: np.ndarray, gallery_emb: np.ndarray, *,
     if not use_kr:
         return q @ g.T
     return k_reciprocal_rerank(q, g, k1=k1, k2=k2, lambda_value=lambda_value)
+
+
+# ---------------------------------------------------------------------------
+# 全域指派：Sinkhorn 平衡
+# ---------------------------------------------------------------------------
+
+def sinkhorn_assignment(sim: np.ndarray, eps: float = 0.0075,
+                        tol: float = 1e-3, max_iters: int = 2000) -> np.ndarray:
+    """把相似度矩陣做 Sinkhorn 正規化（近似雙隨機），回傳新的排序分數。
+
+    **為什麼有用**：官方規格是每池 400 題、400 位候選。
+    每題獨立取 argmax 完全沒用到這個全域約束——
+    一位「長得像很多人」的候選（hub）可以同時被多題選為第一名，
+    而真正的答案卻被擠掉。Sinkhorn 強制每位候選的總指派量大致相等，
+    等於自動做 hubness 校正。
+
+    實測（15 次評估，5 種組成 × 3 seed）：
+        獨立 argmax     0.9233 ±0.0227
+        Sinkhorn        0.9552 ±0.0196   +0.0319（15/15 勝）
+
+    ⚠️ **eps 必須用最壞情境挑，不能用最好情境。**
+    官方沒有明說「每位候選正好是一題的答案」。把假設違反的情境也測過：
+
+        eps      一一對應   三成干擾項   兩成五答案重複   最差
+        0.003    +0.0534    -0.0039      +0.0033        -0.0039
+        0.0075   +0.0442    +0.0033      +0.0100        +0.0033  ← 唯一全正
+        0.02     +0.0006    -0.0147      -0.0133        -0.0147
+        匈牙利    +0.0438    +0.0191      -0.0964        -0.0964  ← 會崩
+
+    所以預設 **eps=0.0075**：在一一對應成立時與匈牙利算法持平（+0.0442 vs +0.0438），
+    但假設錯了也不會變差。匈牙利**強制**一一對應，答案有重複時會把正解硬推給別題。
+
+    ⚠️ **另一個邊界：增益取決於基礎準確率。** 合成實驗（400 身分、5 seed）：
+
+        基礎 Top-1   1.00    0.79      0.40      0.21      0.13
+        Sinkhorn     +0.000  +0.0830   +0.0171   -0.0096   -0.0148
+
+    基礎 Top-1 ≳ 0.4 才有益，約 0.8 時增益最大，低於 0.3 反而有害——
+    模型太弱時，強制平衡只是把錯誤重新分配。
+    本專案實際 Top-1 為 0.906，落在安全區間。
+    **若哪天第一階段檢索退化到 Top-1 < 0.4，要把這個後處理關掉**
+    （`bijection_consistency` 可當作現場的代理指標：
+    準確率低時相異率也會明顯偏低）。
+
+    eps 小的時候收斂很慢，所以用**收斂條件**停止而不是固定迭代次數。
+    不過排序遠比矩陣本身早穩定——實測 400×400、eps=0.0075：
+
+        迭代     50       100      200      500      1000
+        列和誤差 9.7e-2   2.9e-2   1.5e-2   3.6e-3   1.8e-3
+        top-1 變動  —      2 題     1 題     0 題     0 題
+
+    200 次之後名次就完全不動了，分數波動 ±0.002 在雜訊內。
+
+    sim:  (n_query, n_gallery) 相似度，越大越像
+    回傳: 同形狀的分數矩陣，逐列排序即得名次
+    """
+    sim = np.asarray(sim, dtype=np.float64)
+    if sim.ndim != 2:
+        raise ValueError(f"sim 必須是二維矩陣，收到 {sim.shape}")
+    if eps <= 0:
+        raise ValueError("eps 必須為正；eps → 0 會退化成硬指派（見上方風險表）")
+    K = np.exp((sim - sim.max()) / eps)
+    u = np.ones(K.shape[0])
+    v = np.ones(K.shape[1])
+    target = K.shape[1] / K.shape[0]          # 每列該分到的總量
+    for _ in range(max_iters):
+        u = 1.0 / np.maximum(K @ v, 1e-300)
+        v = 1.0 / np.maximum(K.T @ u, 1e-300)
+        rs = u * (K @ v)
+        if np.abs(rs - target).max() <= tol * target:
+            break
+    return u[:, None] * K * v[None, :]
+
+
+def bijection_consistency(sim: np.ndarray) -> float:
+    """診斷：獨立 argmax 的 top-1 有多接近一個排列（1.0 = 完全相異）。
+
+    一一對應若成立，top-1 預測應該接近一個排列，重複只來自模型誤差。
+    比賽當天可以拿真實測試集的這個值與模擬測試集比較：
+    明顯偏低就代表「每位候選正好是一題的答案」不成立。
+    """
+    top1 = np.asarray(sim).argmax(axis=1)
+    return len(np.unique(top1)) / len(top1)
