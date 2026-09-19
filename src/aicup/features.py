@@ -285,9 +285,35 @@ def _quality_stats(moves, my: int, opp: int, n_moves: int) -> dict:
             "third_line_open": n_third / d}
 
 
+_BLACK_TOKENS = {"b", "black", "1", str(BLACK)}
+_WHITE_TOKENS = {"w", "white", "2", str(WHITE)}
+
+
+def normalise_color(color: str | int) -> int:
+    """把題目檔的「執色」欄位轉成內部的 BLACK / WHITE。
+
+    ⚠️ 這裡刻意對無法辨識的值**丟例外**，而不是預設成白棋。
+    早期版本是 `BLACK if color == "B" else WHITE`，於是 `"b"`、`"black"`、
+    `" B"`（多一個空白）全都會被當成白棋——**所有黑棋局都會用錯誤的視角
+    抽特徵**，而且不拋例外、不改變形狀，只是分數安靜地變差。
+    測試集是比賽當天才釋出的，欄位寫法只要與訓練資料差一點就會中招，
+    所以寧可當場炸掉也不要靜默算錯。
+    """
+    if isinstance(color, (int, np.integer)):
+        if int(color) in (BLACK, WHITE):
+            return int(color)
+        raise ValueError(f"無法辨識的執色：{color!r}（預期 {BLACK}=黑 / {WHITE}=白）")
+    tok = str(color).strip().lower()
+    if tok in _BLACK_TOKENS:
+        return BLACK
+    if tok in _WHITE_TOKENS:
+        return WHITE
+    raise ValueError(f"無法辨識的執色：{color!r}（預期 B/W）")
+
+
 def game_features(sgf: str, color: str | int) -> np.ndarray | None:
     """從一局 SGF 抽出固定長度的特徵向量。無法解析或太短時回傳 None。"""
-    my = BLACK if (color == "B" or color == BLACK) else WHITE
+    my = normalise_color(color)
     opp = WHITE if my == BLACK else BLACK
 
     moves = parse_moves(sgf)
