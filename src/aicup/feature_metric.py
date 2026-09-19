@@ -69,15 +69,22 @@ class FeatureScaler:
 @torch.no_grad()
 def embed_features(model: FeatureEmbedder, scaler: FeatureScaler, X: np.ndarray,
                    device, batch: int = 8192) -> np.ndarray:
-    """把原始手工特徵轉成 L2 正規化的 embedding。"""
+    """把原始手工特徵轉成 L2 正規化的 embedding。
+
+    ⚠️ 結束時還原**原本**的 train/eval 模式，不要無條件切回 train。
+    競賽二曾因為同樣的寫法讓推論帶著 dropout 跑，端到端分數從 0.48 掉到 0.33
+    （見 tests/test_eval_mode.py）。
+    """
+    was_training = model.training
     model.eval()
     Z = scaler.transform(X)
     out = []
-    for i in range(0, len(Z), batch):
-        t = torch.from_numpy(Z[i:i + batch]).to(device)
-        e = model(t)[0]
-        out.append(F.normalize(e, dim=1).cpu().numpy())
-    model.train()
+    with torch.no_grad():
+        for i in range(0, len(Z), batch):
+            t = torch.from_numpy(Z[i:i + batch]).to(device)
+            e = model(t)[0]
+            out.append(F.normalize(e, dim=1).cpu().numpy())
+    model.train(was_training)
     return np.concatenate(out) if out else np.zeros((0, model.embed_dim), np.float32)
 
 

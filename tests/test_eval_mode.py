@@ -77,3 +77,37 @@ def test_dropout_actually_changes_output():
         clean = torch.softmax(nets[0](t)[0], dim=-1).numpy()
     assert np.abs(noisy - clean).max() > 1e-6, "模型沒有 dropout，測試需要重新設計"
     assert a.shape == (3, 10)
+
+
+# ---------------------------------------------------------------------------
+# 競賽一的 embed_features 有過完全一樣的寫法，一併鎖住
+# ---------------------------------------------------------------------------
+
+def test_embed_features_restores_mode():
+    from aicup.feature_metric import FeatureEmbedder, FeatureScaler, embed_features
+
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(64, 12)).astype(np.float32)
+    sc = FeatureScaler().fit(X)
+    m = FeatureEmbedder(12, embed_dim=8)
+
+    m.eval()
+    embed_features(m, sc, X, torch.device("cpu"))
+    assert not m.training, "eval 模式被改成 train 了"
+
+    m.train()
+    embed_features(m, sc, X, torch.device("cpu"))
+    assert m.training, "train 模式沒有被還原"
+
+
+def test_embed_features_deterministic_across_calls():
+    from aicup.feature_metric import FeatureEmbedder, FeatureScaler, embed_features
+
+    rng = np.random.default_rng(1)
+    X = rng.normal(size=(64, 12)).astype(np.float32)
+    sc = FeatureScaler().fit(X)
+    m = FeatureEmbedder(12, embed_dim=8)
+    m.eval()
+    a = embed_features(m, sc, X, torch.device("cpu"))
+    b = embed_features(m, sc, X, torch.device("cpu"))
+    assert np.abs(a - b).max() == 0.0
