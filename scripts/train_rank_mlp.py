@@ -27,6 +27,7 @@ import torch.nn.functional as F
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from aicup.data import load_metadata, make_player_split          # noqa: E402
+from aicup.featstore import open_stores          # noqa: E402
 from aicup.benchmark import build_rank_questions                 # noqa: E402
 from aicup.feature_metric import FeatureScaler                   # noqa: E402
 from aicup.losses import SoftLabelCrossEntropy, CornLoss, corn_to_proba  # noqa: E402
@@ -108,6 +109,8 @@ def main() -> int:
                     help="抽多少局訓練（0 = 全部）")
     ap.add_argument("--corn-weight", type=float, default=0.5)
     ap.add_argument("--device", default="auto")
+    ap.add_argument("--extra-features", nargs="*", default=[],
+                    help="額外的特徵庫，沿特徵軸串接。`cache/features_opp.npy` 是**對手視角**的特徵（同盤棋、執色反轉）：伺服器把你配對給實力相近的人，所以對手的表現反映配對分級、而分級反映你的穩定實力。實測 6 組獨立題目 +0.0491±0.0232（6/6 勝，t=5.19）")
     ap.add_argument("--out", default="cache/rank_mlp")
     args = ap.parse_args()
 
@@ -115,8 +118,10 @@ def main() -> int:
     os.makedirs(args.out, exist_ok=True)
     print(f"device = {device}", flush=True)
 
-    X = np.load("cache/features.npy", mmap_mode="r")
-    ok = np.load("cache/features_ok.npy")
+    X, ok = open_stores(["cache/features.npy"] + list(args.extra_features))
+    if args.extra_features:
+        print(f"  特徵庫 {X.shape[1]} 維（含 {len(args.extra_features)} 份額外）"
+              f"，共同有效 {ok.mean():.4f}", flush=True)
     meta = load_metadata()
     split = make_player_split(meta, val_frac=0.20, seed=42)
     vm = split.mask(meta)

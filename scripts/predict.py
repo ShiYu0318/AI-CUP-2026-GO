@@ -39,8 +39,14 @@ from aicup.submission import (build_rank_submission, build_player_submission,  #
 MAX_GAMES = 20
 
 
-def _question_features(df: pd.DataFrame):
-    """把一份題目檔轉成 [每題的特徵矩陣]。"""
+def _question_features(df: pd.DataFrame, with_opponent: bool = False):
+    """把一份題目檔轉成 [每題的特徵矩陣]。
+
+    with_opponent=True 會同時抽**對手視角**（同一盤棋、執色反轉）並沿特徵軸串接，
+    順序必須與訓練時的 `--extra-features cache/features_opp.npy` 一致。
+    ⚠️ 有效遮罩取**交集**：任一視角抽取失敗就整局不用，
+    否則串接出來的向量會有一半是零而不自知。
+    """
     sgf_cols = [f"sgf_{i}" for i in range(1, MAX_GAMES + 1)]
     col_cols = [f"color_{i}" for i in range(1, MAX_GAMES + 1)]
     flat_sgf, flat_col, sizes = [], [], []
@@ -52,6 +58,13 @@ def _question_features(df: pd.DataFrame):
                 flat_sgf.append(v); flat_col.append(r[cc]); n += 1
         sizes.append(n)
     X, ok = parallel_batch_features(flat_sgf, flat_col)
+    if with_opponent:
+        from aicup.features import normalise_color
+        from aicup.goboard import BLACK
+        flip = ["W" if normalise_color(c) == BLACK else "B" for c in flat_col]
+        Xo, oko = parallel_batch_features(flat_sgf, flip)
+        X = np.concatenate([X, Xo], axis=1)
+        ok = ok & oko
     out, pos = [], 0
     for n in sizes:
         block = X[pos:pos + n][ok[pos:pos + n]]
@@ -159,6 +172,12 @@ def main() -> int:
                          "對手工餘弦有 +0.0211，但對度量學習的 embedding 無效甚至有害"
                          "（實測平均 -0.003），所以預設停用。"
                          "只有在 --feature-metric 留空時才建議啟用 cache/stage2/model.pkl")
+    ap.add_argument("--extra-features", nargs="*", default=[],
+                    help="競賽二額外的特徵庫，必須與訓練時完全一致。"
+                         "`cache/features_opp.npy` 是對手視角（同盤棋、執色反轉）："
+                         "伺服器把你配對給實力相近的人，對手的表現反映配對分級，"
+                         "而分級反映你的穩定實力。實測 +0.0491±0.0232（6/6 勝，t=5.19）。"
+                         "⚠️ 給了這個就會在測試集上多抽一次特徵，時間加倍")
     ap.add_argument("--sinkhorn", type=float, default=0.0075,
                     help="競賽一的全域指派強度（0 = 關閉）。官方每池 400 題 / 400 候選，"
                          "每題獨立 argmax 沒用到這個全域約束。15 次評估實測 "
@@ -224,8 +243,8 @@ def main() -> int:
     if args.decode == "threshold":
         from aicup.data import make_player_split as _mps
         from aicup.benchmark import build_rank_questions as _brq
-        _X = np.load("cache/features.npy", mmap_mode="r")
-        _ok = np.load("cache/features_ok.npy")
+        from aicup.featstore import open_stores
+        _X, _ok = open_stores(["cache/features.npy"] + list(args.extra_features))
         _meta = load_metadata()
         _sp = _mps(_meta, val_frac=0.20, seed=42)
         _q = _brq(_meta, _sp, n_per_player=3, seed=0)
@@ -251,7 +270,7 @@ def main() -> int:
         path = os.path.join(args.test_dir, f"rank_prediction_test_{tag}.csv")
         df = pd.read_csv(path)
         t0 = time.time()
-        feats = _question_features(df)
+        feats = _question_features(df, with_opponent=bool(args.extra_features))
         if rank_mlp:
             nets, rsc, rdev, _ = rank_mlp
             for _n in nets:                 # 保險：推論一律 eval（dropout 關閉）
