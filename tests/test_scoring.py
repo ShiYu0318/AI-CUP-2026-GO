@@ -11,7 +11,9 @@ from aicup.scoring import (
     decode_expected_score, decode_argmax, apply_temperature, fit_temperature,
     player_score_from_rank, player_final_score,
     ranks_from_similarity, top_k_from_similarity, retrieval_report,
+    optimise_thresholds, apply_thresholds,
 )
+from aicup import N_LEVELS
 
 
 # ---------------- 競賽二 ----------------
@@ -328,3 +330,71 @@ def test_optimise_thresholds_beats_naive_on_shifted_scores():
     naive = np.clip(np.round(s), 0, 9).astype(int)
     th = optimise_thresholds(s, y, n_restarts=4)
     assert rank_final_score(apply_thresholds(s, th), y) > rank_final_score(naive, y)
+
+
+# ---------------------------------------------------------------------------
+# 切點最佳化：這一組測試是為了擋住一個真實踩過的坑
+#
+# 舊版 optimise_thresholds 用 Nelder-Mead。但官方分數對切點是**分段常數**的，
+# 梯度處處為零，Nelder-Mead 在上面本質是隨機遊走：
+#   - 輸入最後幾個 bit 的差異（例如 MPS vs CPU 推論）就會走到完全不同的解
+#   - 解會退化：實測出現過 [..., 4.88, 4.88, ...] 兩個切點重合，
+#     導致該等級分不到任何題目，端到端分數從 0.48 掉到 0.33
+# 換成動態規劃後是全域最佳且確定性的。以下測試鎖住這兩個性質。
+# ---------------------------------------------------------------------------
+
+def _synthetic_scores(n=1500, seed=0):
+    rng = np.random.default_rng(seed)
+    y = rng.integers(0, N_LEVELS, n)
+    return 2.0 + 0.4 * y + rng.normal(scale=0.5, size=n), y
+
+
+def test_optimise_thresholds_is_deterministic():
+    """同樣輸入重複呼叫必須逐位元相同。"""
+    s, y = _synthetic_scores()
+    assert np.array_equal(optimise_thresholds(s, y), optimise_thresholds(s, y))
+
+
+def test_optimise_thresholds_is_stable_under_tiny_perturbation():
+    """加上 1e-12 的擾動不該讓切點大幅跳動（Nelder-Mead 版本會）。"""
+    s, y = _synthetic_scores()
+    a = optimise_thresholds(s, y)
+    b = optimise_thresholds(s + 1e-12, y)
+    assert np.abs(a - b).max() < 1e-6
+
+
+def test_optimise_thresholds_never_degenerate():
+    """切點必須嚴格遞增：重複的切點代表有等級永遠不會被預測到。"""
+    for seed in range(5):
+        s, y = _synthetic_scores(seed=seed)
+        th = optimise_thresholds(s, y)
+        assert len(th) == N_LEVELS - 1
+        assert np.all(np.diff(th) > 0), f"seed={seed} 切點退化：{th}"
+
+
+def test_optimise_thresholds_beats_naive_rounding():
+    """最佳化切點要明顯勝過直接四捨五入。"""
+    s, y = _synthetic_scores()
+    opt = rank_final_score(apply_thresholds(s, optimise_thresholds(s, y)), y)
+    naive = rank_final_score(np.clip(np.round(s), 0, N_LEVELS - 1).astype(int), y)
+    assert opt > naive + 0.05
+
+
+def test_optimise_thresholds_is_globally_optimal_on_tiny_case():
+    """在小案例上與暴力枚舉的最佳解一致（DP 宣稱全域最佳，這裡驗證）。"""
+    import itertools
+    rng = np.random.default_rng(3)
+    n_levels = 3
+    s = np.sort(rng.normal(size=12))
+    y = rng.integers(0, n_levels, 12)
+
+    S = rank_score_matrix(n_levels)
+
+    def score(th):
+        return S[apply_thresholds(s, np.asarray(th)), y].mean()
+
+    best = score(optimise_thresholds(s, y, n_levels=n_levels))
+    # 暴力：切點只可能落在相鄰樣本之間，枚舉所有位置組合
+    mids = np.concatenate([[s[0] - 1], (s[:-1] + s[1:]) / 2, [s[-1] + 1]])
+    brute = max(score(c) for c in itertools.combinations(mids, n_levels - 1))
+    assert best >= brute - 1e-9, f"DP {best} 低於暴力最佳 {brute}"
