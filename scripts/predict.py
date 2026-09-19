@@ -141,11 +141,16 @@ def main() -> int:
                     help="題目後驗的溫度；<1 為銳化。實測最佳 0.5~0.6")
     ap.add_argument("--aggregation", default="logmean", choices=["mean", "logmean"])
     ap.add_argument("--rank-question", default="cache/rank_question/models.pt",
-                    help="競賽二的題目層級模型。與單局模型融合後實測 0.4841，"
-                         "明顯超過官方 baseline 0.4631（單獨用任一個都只有 ~0.457）")
-    ap.add_argument("--rank-mlp", default="cache/rank_mlp/models.pt",
-                    help="競賽二的 MLP 集成。實測勝過 GBDT（0.4351 -> 0.4663，"
-                         "已超過官方 baseline 0.4631）。設為空字串則退回 GBDT")
+                    help="競賽二的題目層級模型，與單局模型幾何融合（權重存在 "
+                         "checkpoint 裡，目前 0.2）。8 組切分掃過 w=0~0.4，"
+                         "0.2 就是最佳且變異最小（0.4895±0.0090）。"
+                         "它單獨只有 0.4495、比單局模型還差，但看的是 5~20 局"
+                         "之間的變異，所以融合有增益——弱但互補")
+    ap.add_argument("--rank-mlp", default="cache/rank_mlp_big/models.pt",
+                    help="競賽二的單局 MLP 集成。8 組 player-disjoint 切分實測："
+                         "rank_mlp_big（5 seed / 78 萬局）0.4895±0.0090（8/8 超過 "
+                         "baseline）勝過 rank_mlp（3 seed / 30 萬局）0.4783±0.0124。"
+                         "設為空字串則退回 GBDT（0.4351，不建議）")
     ap.add_argument("--feature-metric", default="cache/feature_metric/models.pt",
                     help="競賽一的度量學習模型（目前增益最大：0.6630 -> 0.8125）。"
                          "設為空字串則退回「標準化+L2」的無學習版本")
