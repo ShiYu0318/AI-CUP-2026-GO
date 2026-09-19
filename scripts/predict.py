@@ -73,6 +73,59 @@ def _question_features(df: pd.DataFrame, with_opponent: bool = False):
     return out
 
 
+def _question_sequences(df: pd.DataFrame):
+    """把一份題目檔轉成 [每題的逐手序列張量, 長度]。
+
+    與 `_question_features` 平行：那個抽整局的統計摘要，這個抽逐手序列。
+    有效判斷兩邊一致（手數 < 30 或我方手數 < 15 就算失敗）。
+    """
+    from aicup.moveseq import MAX_MOVES, batch_move_sequences
+
+    sgf_cols = [f"sgf_{i}" for i in range(1, MAX_GAMES + 1)]
+    col_cols = [f"color_{i}" for i in range(1, MAX_GAMES + 1)]
+    flat_sgf, flat_col, sizes = [], [], []
+    for _, r in df.iterrows():
+        n = 0
+        for sc, cc in zip(sgf_cols, col_cols):
+            v = r.get(sc)
+            if pd.notna(v) and str(v).strip():
+                flat_sgf.append(v); flat_col.append(r[cc]); n += 1
+        sizes.append(n)
+    S, ok = batch_move_sequences(flat_sgf, flat_col)
+    out, pos = [], 0
+    for n in sizes:
+        blk = S[pos:pos + n][ok[pos:pos + n]]
+        out.append(np.asarray(blk, dtype=np.float32))
+        pos += n
+    return out
+
+
+def _seq_posteriors_from_blocks(seq_nets, blocks, device):
+    """由已抽好的逐題序列算題目層級後驗（幾何平均，與單局模型一致）。"""
+    import torch as _t
+    from aicup.losses import corn_to_proba as _c2p
+    from aicup.moveseq import MAX_MOVES
+
+    out = []
+    with _t.no_grad():
+        for A in blocks:
+            if len(A) == 0:
+                out.append(np.full(10, 0.1)); continue
+            lens = (np.abs(A).sum(-1) > 0).sum(-1)
+            x = _t.from_numpy(A).to(device)
+            mk = _t.from_numpy(np.arange(MAX_MOVES)[None, :] < lens[:, None]).to(device)
+            ps = []
+            for n in seq_nets:
+                lc, lo = n(x, mk)
+                pc = _c2p(lo).cpu().numpy()
+                ps.append(0.5 * _t.softmax(lc, -1).cpu().numpy()
+                          + 0.5 * pc / np.maximum(pc.sum(1, keepdims=True), 1e-12))
+            p = np.mean(ps, axis=0)
+            g = np.exp(np.log(np.clip(p, 1e-12, None)).mean(axis=0))
+            out.append(g / g.sum())
+    return np.stack(out)
+
+
 def _question_posteriors_from_features(rank_question, Xq):
     """由聚合特徵算題目層級後驗。"""
     import torch
@@ -179,6 +232,14 @@ def main() -> int:
                          "伺服器把你配對給實力相近的人，對手的表現反映配對分級，"
                          "而分級反映你的穩定實力。實測 +0.0491±0.0232（6/6 勝，t=5.19）。"
                          "⚠️ 給了這個就會在測試集上多抽一次特徵，時間加倍")
+    ap.add_argument("--rank-seq", default="cache/rank_seq/models.pt",
+                    help="競賽二的逐手序列模型（dilated 1D-CNN）。"
+                         "589 維是整局的統計摘要，看不到『愚形出現在第 30 手還是第 150 手』。"
+                         "8 組 player-disjoint 實測：疊在對手視角管線之上 "
+                         "0.5402 → 0.5553（+0.0151）。設為空字串則停用")
+    ap.add_argument("--seq-weight", type=float, default=0.45,
+                    help="序列模型的融合權重。w 在 0.35~0.55 之間是平台"
+                         "（0.5532~0.5553），確切值不敏感")
     ap.add_argument("--sinkhorn", type=float, default=0.0075,
                     help="競賽一的全域指派強度（0 = 關閉）。官方每池 400 題 / 400 候選，"
                          "每題獨立 argmax 沒用到這個全域約束。15 次評估實測 "
@@ -236,6 +297,22 @@ def main() -> int:
             print(f"  ＋題目層級模型（{len(qnets)} 個，融合權重 "
                   f"{qck['blend_weight']:.1f}）", flush=True)
 
+    seq_nets, seq_dev = None, None
+    if args.rank_seq and os.path.exists(args.rank_seq) and args.seq_weight > 0:
+        import torch
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from train_rank_seq import SeqRankNet
+        seq_dev = torch.device("cuda" if torch.cuda.is_available() else
+                               "mps" if torch.backends.mps.is_available() else "cpu")
+        sck = torch.load(args.rank_seq, map_location=seq_dev, weights_only=False)
+        seq_nets = []
+        for sd in sck["models"]:
+            n = SeqRankNet(width=sck["args"]["width"])
+            n.load_state_dict(sd); n.eval().to(seq_dev)
+            seq_nets.append(n)
+        print(f"  ＋逐手序列模型（{len(seq_nets)} 個，融合權重 {args.seq_weight}）",
+              flush=True)
+
     model = None if rank_mlp else _fit_rank_model("cache/rank_model.pkl",
                                                   args.train_per_rank)
 
@@ -259,6 +336,15 @@ def main() -> int:
             _P = model.question_proba(
                 [np.asarray(_X[r[_ok[r]]]) for r in _q.game_rows], args.aggregation)
         _lo = np.log(np.clip(_P, 1e-12, None))
+        if seq_nets is not None:
+            from aicup.moveseq import MAX_MOVES as _MM
+            _S = np.load("cache/sequences.npy", mmap_mode="r")
+            _sok = np.load("cache/sequences_ok.npy")
+            _blocks = [np.asarray(_S[r[_sok[r]]], dtype=np.float32) for r in _q.game_rows]
+            _ls = np.log(np.clip(_seq_posteriors_from_blocks(seq_nets, _blocks, seq_dev),
+                                 1e-12, None))
+            from aicup.question_model import blend_log_posteriors as _blp
+            _lo = _blp(_lo, _ls, w=args.seq_weight)
         _T = fit_temperature(_lo, _q.true_rank_id)
         _th = optimise_thresholds(
             expected_level(apply_temperature(_lo, _T)), _q.true_rank_id)
@@ -301,6 +387,12 @@ def main() -> int:
         else:
             P = model.question_proba(feats, how=args.aggregation)
         lo = np.log(np.clip(P, 1e-12, None))
+        if seq_nets is not None:
+            from aicup.question_model import blend_log_posteriors as _blp
+            blocks = _question_sequences(df)
+            ls = np.log(np.clip(
+                _seq_posteriors_from_blocks(seq_nets, blocks, seq_dev), 1e-12, None))
+            lo = _blp(lo, ls, w=args.seq_weight)
         if args.decode == "threshold":
             T, th = calib
             pred = apply_thresholds(expected_level(apply_temperature(lo, T)), th)
