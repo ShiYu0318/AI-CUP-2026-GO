@@ -212,11 +212,37 @@ Sinkhorn 是軟性平衡，三種情境下**都不會變差**，最差只是持�
 
 這不是洩漏：測試集的 SGF 也含對手的手，執色已知，推論時一樣算得出來。
 
-⚠️ **但這是在 3.2 萬局訓練資料上量的**（完整管線是 78 萬局）。
-我方模型在小資料上比較弱（0.3905 vs 完整管線的 0.4643），
-對手特徵的增量在大資料上可能縮小。全量驗證進行中。
+#### 全量驗證：增益不但沒縮小，反而更穩
 
-指令：`python3 scripts/build_feature_store.py --opponent`（產出 `cache/features_opp.npy`）
+擔心的是小資料上我方模型較弱、增量被高估。用**與 `cache/rank_mlp` 完全相同的設定**
+（3 seed / 30 萬局 / hidden 768 / 8000 步）訓練 1178 維版本，8 組 player-disjoint 對照：
+
+| | 分數 | 加對手視角 |
+|---|---:|---|
+| 單局 589 單獨 | 0.4557 ±0.0143 | — |
+| **單局 1178 單獨** | **0.5028 ±0.0088** | **+0.0470 ±0.0098（8/8 勝，t=13.56）** |
+| 589 + 題目模型 | 0.4775 ±0.0149 | — |
+| **1178 + 題目模型** | **0.5107 ±0.0094** | **+0.0332 ±0.0103（8/8 勝，t=9.14）** |
+
+**0.5107 超過先前最佳的 0.4895（+0.0212）**，而且只用 3 seed / 30 萬局——
+連 5 seed / 78 萬局的 `rank_mlp_big` 都比不上。
+**1178 維單局模型單獨（0.5028）就已經超過整條舊管線。**
+
+標準差也從 ±0.0143 收斂到 ±0.0088，代表對手特徵不只提高平均，還降低了變異。
+
+#### 重現
+
+```bash
+python3 scripts/build_feature_store.py --opponent          # 10 分，產出 features_opp.npy
+python3 scripts/train_rank_mlp.py --extra-features cache/features_opp.npy \
+    --seeds 5 --steps 20000 --hidden 1024 --train-games 0 --out cache/rank_mlp_opp_big
+python3 scripts/predict.py --test-dir mock_tests \
+    --rank-mlp cache/rank_mlp_opp_big/models.pt \
+    --extra-features cache/features_opp.npy
+```
+
+⚠️ 推論時 `--extra-features` 必須與訓練時完全一致，否則維度對不上。
+`predict.py` 會自動在測試集上多抽一次對手視角的特徵（時間加倍，約 20 秒）。
 
 ### 2.2 三個成分的貢獻（8 組獨立題目，t = 6.34）
 
