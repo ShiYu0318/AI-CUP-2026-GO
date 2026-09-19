@@ -60,6 +60,48 @@ def _question_features(df: pd.DataFrame):
     return out
 
 
+def _question_posteriors_from_features(rank_question, Xq):
+    """由聚合特徵算題目層級後驗。"""
+    import torch
+    from aicup.losses import corn_to_proba
+    qnets, qsc, _, _, _ = rank_question
+    dev = next(qnets[0].parameters()).device
+    with torch.no_grad():
+        A = torch.from_numpy(qsc.transform(Xq)).to(dev)
+        ps = []
+        for n in qnets:
+            lc, lo = n(A)
+            p = torch.softmax(lc, dim=-1).cpu().numpy()
+            pc = corn_to_proba(lo).cpu().numpy()
+            pc = pc / np.maximum(pc.sum(axis=1, keepdims=True), 1e-12)
+            ps.append(0.5 * p + 0.5 * pc)
+    return np.mean(ps, axis=0)
+
+
+def _blend_question(rank_question, X, ok, game_rows, log_game):
+    """從 feature store 取聚合特徵後融合。"""
+    _, _, w, build_q, blend = rank_question
+    Xq = build_q(X, ok, game_rows)
+    lq = np.log(np.clip(_question_posteriors_from_features(rank_question, Xq), 1e-12, None))
+    return blend(log_game, lq, w)
+
+
+def _blend_question_from_feats(rank_question, feats, log_game):
+    """從已抽好的逐題特徵清單聚合後融合（推論路徑用）。"""
+    from aicup.question_model import aggregate_question
+    _, _, w, _, blend = rank_question
+    dim = None
+    rows = []
+    for A in feats:
+        v = aggregate_question(np.asarray(A)) if len(A) else None
+        rows.append(v)
+        if v is not None and dim is None:
+            dim = len(v)
+    Xq = np.stack([v if v is not None else np.zeros(dim, np.float32) for v in rows])
+    lq = np.log(np.clip(_question_posteriors_from_features(rank_question, Xq), 1e-12, None))
+    return blend(log_game, lq, w)
+
+
 def _fit_rank_model(cache_path: str, train_per_rank: int):
     if os.path.exists(cache_path):
         with open(cache_path, "rb") as f:
@@ -98,6 +140,9 @@ def main() -> int:
     ap.add_argument("--temperature", type=float, default=0.5,
                     help="題目後驗的溫度；<1 為銳化。實測最佳 0.5~0.6")
     ap.add_argument("--aggregation", default="logmean", choices=["mean", "logmean"])
+    ap.add_argument("--rank-question", default="cache/rank_question/models.pt",
+                    help="競賽二的題目層級模型。與單局模型融合後實測 0.4841，"
+                         "明顯超過官方 baseline 0.4631（單獨用任一個都只有 ~0.457）")
     ap.add_argument("--rank-mlp", default="cache/rank_mlp/models.pt",
                     help="競賽二的 MLP 集成。實測勝過 GBDT（0.4351 -> 0.4663，"
                          "已超過官方 baseline 0.4631）。設為空字串則退回 GBDT")
@@ -127,6 +172,7 @@ def main() -> int:
     print("競賽二：棋力預測", flush=True)
     print("=" * 60, flush=True)
     rank_mlp = None
+    rank_question = None
     if args.rank_mlp and os.path.exists(args.rank_mlp):
         import torch
         from aicup.feature_metric import FeatureScaler
@@ -144,6 +190,20 @@ def main() -> int:
         rank_mlp = (nets, rsc, rdev, question_posteriors)
         print(f"  競賽二使用 MLP 集成（{len(nets)} 個模型，device={rdev}）", flush=True)
 
+        if args.rank_question and os.path.exists(args.rank_question):
+            from aicup.question_model import build_question_features, blend_log_posteriors
+            qck = torch.load(args.rank_question, map_location=rdev, weights_only=False)
+            qsc = FeatureScaler().load_state_dict(qck["scaler"])
+            qnets = []
+            for sd in qck["models"]:
+                n = RankMLP(len(qsc.mu), hidden=qck["args"]["hidden"])
+                n.load_state_dict(sd); n.eval().to(rdev)
+                qnets.append(n)
+            rank_question = (qnets, qsc, float(qck["blend_weight"]),
+                             build_question_features, blend_log_posteriors)
+            print(f"  ＋題目層級模型（{len(qnets)} 個，融合權重 "
+                  f"{qck['blend_weight']:.1f}）", flush=True)
+
     model = None if rank_mlp else _fit_rank_model("cache/rank_model.pkl",
                                                   args.train_per_rank)
 
@@ -160,6 +220,9 @@ def main() -> int:
         if rank_mlp:
             nets, rsc, rdev, qpost = rank_mlp
             _P = qpost(nets, rsc, _X, _ok, _q.game_rows, rdev)
+            if rank_question:
+                _P = np.exp(_blend_question(rank_question, _X, _ok,
+                                            _q.game_rows, np.log(np.clip(_P, 1e-12, None))))
         else:
             _P = model.question_proba(
                 [np.asarray(_X[r[_ok[r]]]) for r in _q.game_rows], args.aggregation)
@@ -198,6 +261,9 @@ def main() -> int:
                     g = np.exp(np.log(np.clip(p, 1e-12, None)).mean(axis=0))
                     P.append(g / g.sum())
             P = np.stack(P)
+            if rank_question:
+                P = np.exp(_blend_question_from_feats(
+                    rank_question, feats, np.log(np.clip(P, 1e-12, None))))
         else:
             P = model.question_proba(feats, how=args.aggregation)
         lo = np.log(np.clip(P, 1e-12, None))
