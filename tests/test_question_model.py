@@ -67,9 +67,17 @@ def test_blend_endpoints_recover_inputs():
 
 
 def test_blend_is_geometric_not_arithmetic():
-    """幾何平均要求兩個模型都同意；算術平均會被單一過度自信主導。"""
-    a = np.log(np.array([[0.98, 0.01, 0.01]]))
-    b = np.log(np.array([[0.02, 0.49, 0.49]]))
+    """幾何平均要求兩個模型都同意；算術平均會被單一過度自信主導。
+
+    案例：模型 b 很喜歡類別 0（0.90），但模型 a 幾乎否決它（0.001）。
+    幾何平均會尊重這個否決（降到 0.09），算術平均則仍給 0.45。
+
+    ⚠️ 挑數字要小心：若兩個分布對稱（例如 [0.98,0.01,0.01] vs [0.02,0.49,0.49]），
+    兩種平均會剛好都得 0.5，測不出差別——這個測試第一版就是這樣寫錯的。
+    """
+    a = np.log(np.array([[0.001, 0.899, 0.100]]))
+    b = np.log(np.array([[0.900, 0.050, 0.050]]))
     geo = np.exp(blend_log_posteriors(a, b, 0.5))
     arith = 0.5 * np.exp(a) + 0.5 * np.exp(b)
-    assert geo[0, 0] < arith[0, 0]
+    assert geo[0, 0] < 0.5 * arith[0, 0]          # 否決權讓幾何平均低得多
+    assert np.allclose(geo.sum(), 1.0)
