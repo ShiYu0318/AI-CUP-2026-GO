@@ -39,6 +39,34 @@ from aicup.scoring import (fit_temperature, apply_temperature,    # noqa: E402
                            apply_thresholds, rank_final_score)
 
 
+class SeqStore:
+    """多份序列庫沿**特徵軸**串接（每一手的向量變長），取列時才合併。
+
+    與 `aicup.featstore.MultiStore` 同樣的理由：兩份各 3.84 GB，
+    實體合併既浪費磁碟、又讓「只用我方」的實驗得重建。
+    """
+
+    def __init__(self, parts):
+        n = len(parts[0])
+        for i, p in enumerate(parts):
+            if len(p) != n:
+                raise ValueError(f"第 {i} 份序列庫有 {len(p):,} 列，與第 0 份的 {n:,} 列不符")
+        self.parts = parts
+        self._shape = (n, parts[0].shape[1], sum(p.shape[2] for p in parts))
+
+    def __len__(self):
+        return self._shape[0]
+
+    @property
+    def shape(self):
+        return self._shape
+
+    def __getitem__(self, rows):
+        if len(self.parts) == 1:
+            return self.parts[0][rows]
+        return np.concatenate([np.asarray(p[rows]) for p in self.parts], axis=-1)
+
+
 def pick_device(name: str) -> torch.device:
     if name != "auto":
         return torch.device(name)
@@ -128,6 +156,10 @@ def main() -> int:
     ap.add_argument("--train-games", type=int, default=400000,
                     help="抽多少局訓練（0 = 全部）。序列張量比特徵大，記憶體吃緊時調小")
     ap.add_argument("--sequences", default="cache/sequences.npy")
+    ap.add_argument("--extra-sequences", nargs="*", default=[],
+                    help="額外的序列庫，沿**特徵軸**串接（每一手的向量變長）。"
+                         "`cache/sequences_opp.npy` 是對手視角的逐手序列——"
+                         "對手視角在整局統計上值 +0.05")
     ap.add_argument("--device", default="auto")
     ap.add_argument("--out", default="cache/rank_seq")
     args = ap.parse_args()
@@ -136,8 +168,16 @@ def main() -> int:
     os.makedirs(args.out, exist_ok=True)
     print(f"device = {device}", flush=True)
 
-    S = np.load(args.sequences, mmap_mode="r")
-    ok = np.load(args.sequences.replace(".npy", "_ok.npy"))
+    paths = [args.sequences] + list(args.extra_sequences)
+    parts = [np.load(p_, mmap_mode="r") for p_ in paths]
+    ok = None
+    for p_ in paths:
+        m = np.load(p_.replace(".npy", "_ok.npy"))
+        ok = m if ok is None else (ok & m)     # 任一視角失敗就整局不用
+    S = SeqStore(parts)
+    if args.extra_sequences:
+        print(f"  序列庫 {S.shape[-1]} 維/手（含 {len(args.extra_sequences)} 份額外）"
+              f"，共同有效 {ok.mean():.4f}", flush=True)
     meta = load_metadata()
     split = make_player_split(meta, val_frac=0.20, seed=42)
     vm = split.mask(meta)
@@ -148,7 +188,7 @@ def main() -> int:
     rows = (np.sort(rng.choice(pool, size=min(args.train_games, len(pool)),
                                replace=False))
             if args.train_games else pool)
-    print(f"訓練局數 {len(rows):,}，序列 {MAX_MOVES}×{N_MOVE_FEATURES}", flush=True)
+    print(f"訓練局數 {len(rows):,}，序列 {MAX_MOVES}×{S.shape[-1]}", flush=True)
 
     Xtr = np.asarray(S[rows], dtype=np.float32)
     ltr = (np.abs(Xtr).sum(-1) > 0).sum(-1)
@@ -161,7 +201,7 @@ def main() -> int:
     nets = []
     for sd in range(args.seeds):
         torch.manual_seed(sd)
-        net = SeqRankNet(width=args.width).to(device)
+        net = SeqRankNet(n_feat=S.shape[-1], width=args.width).to(device)
         opt = torch.optim.AdamW(net.parameters(), lr=args.lr, weight_decay=1e-4)
         sch = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr,
                                                   total_steps=args.steps, pct_start=0.1)

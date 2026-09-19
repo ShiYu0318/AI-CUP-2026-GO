@@ -28,17 +28,26 @@ import pandas as pd
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from aicup.data import training_files                          # noqa: E402
+from aicup.features import normalise_color                     # noqa: E402
+from aicup.goboard import BLACK                                # noqa: E402
 from aicup.moveseq import (MAX_MOVES, N_MOVE_FEATURES,         # noqa: E402
                            batch_move_sequences)
 
 CACHE_DIR = "cache"
 
 
+def _flip(colors):
+    return ["W" if normalise_color(c) == BLACK else "B" for c in colors]
+
+
 def _worker(args):
-    file_idx, path, limit = args
+    file_idx, path, limit, opponent = args
     d = pd.read_csv(path, usecols=["color", "sgf_content"], nrows=limit)
+    colors = d["color"].tolist()
+    if opponent:
+        colors = _flip(colors)
     t0 = time.time()
-    S, ok = batch_move_sequences(d["sgf_content"].tolist(), d["color"].tolist())
+    S, ok = batch_move_sequences(d["sgf_content"].tolist(), colors)
     np.savez(os.path.join(CACHE_DIR, f"_seq{file_idx:02d}.npz"), S=S, ok=ok)
     return file_idx, len(d), int(ok.sum()), time.time() - t0
 
@@ -48,8 +57,13 @@ def main() -> int:
     ap.add_argument("--nproc", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--limit", type=int, default=None, help="每個等級只處理前 N 局（除錯用）")
     ap.add_argument("--training-dir", default="training")
+    ap.add_argument("--opponent", action="store_true",
+                    help="抽對手視角的序列（執色反轉）。對手視角在整局統計上值 +0.05，"
+                         "序列上很可能也有")
     ap.add_argument("--out", default="cache/sequences.npy")
     args = ap.parse_args()
+    if args.opponent and args.out == "cache/sequences.npy":
+        args.out = "cache/sequences_opp.npy"
 
     # macOS 的 Python 3.13 預設 spawn 會讓 worker 卡住；本工作純數值運算，fork 安全。
     try:
@@ -59,7 +73,7 @@ def main() -> int:
 
     os.makedirs(CACHE_DIR, exist_ok=True)
     files = training_files(args.training_dir)
-    jobs = [(i, p, args.limit) for i, p in enumerate(files)]
+    jobs = [(i, p, args.limit, args.opponent) for i, p in enumerate(files)]
 
     t0 = time.time()
     with ctx.Pool(min(args.nproc, len(jobs))) as pool:
