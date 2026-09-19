@@ -25,6 +25,7 @@ import torch.nn.functional as F
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from aicup.data import load_metadata, make_player_split        # noqa: E402
+from aicup.featstore import open_stores          # noqa: E402
 from aicup.benchmark import build_player_pool                  # noqa: E402
 from aicup.baselines import PlayerBaseline                     # noqa: E402
 from aicup.feature_metric import (FeatureEmbedder, FeatureScaler,   # noqa: E402
@@ -122,14 +123,19 @@ def main() -> int:
                     help="保留 55 維的全局落子分布。預設拿掉——實測拿掉平均 +0.0161，"
                          "5 種等級組成全為正（整局分布由棋局走勢決定，不是由人決定）")
     ap.add_argument("--out", default="cache/feature_metric")
+    ap.add_argument("--extra-features", nargs="*", default=[],
+                    help="額外的特徵庫。`cache/features_opp.npy` 是對手視角——"
+                         "對競賽二有 +0.033，對競賽一是否有用尚待驗證")
     args = ap.parse_args()
 
     device = pick_device(args.device)
     os.makedirs(args.out, exist_ok=True)
     print(f"device = {device}", flush=True)
 
-    X = np.load("cache/features.npy", mmap_mode="r")
-    ok = np.load("cache/features_ok.npy")
+    X, ok = open_stores(["cache/features.npy"] + list(args.extra_features))
+    if args.extra_features:
+        print(f"  特徵庫 {X.shape[1]} 維（含 {len(args.extra_features)} 份額外）"
+              f"，共同有效 {ok.mean():.4f}", flush=True)
     meta = load_metadata()
     split = make_player_split(meta, val_frac=0.20, seed=42)
     vm = split.mask(meta)
@@ -142,6 +148,12 @@ def main() -> int:
     print(f"訓練局數 {len(tr):,}，身分 {len(players):,}", flush=True)
 
     cols = identity_feature_columns(drop_global_position=not args.keep_global_position)
+    if args.extra_features:
+        # identity_feature_columns 的索引是針對「我方 589 維」定義的。
+        # 額外的特徵庫接在後面，對每一份套用同一組相對索引。
+        base = X.parts[0].shape[1]
+        cols = np.concatenate([np.asarray(cols) + i * base
+                               for i in range(len(X.parts))])
     print(f"特徵欄位 {len(cols)} / {X.shape[1]}", flush=True)
     Xraw = np.asarray(X[tr])[:, cols]
     scaler = FeatureScaler().fit(Xraw)
