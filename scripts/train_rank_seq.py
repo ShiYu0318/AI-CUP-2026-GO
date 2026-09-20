@@ -131,7 +131,7 @@ def question_posteriors(nets, S, ok, lens, game_rows, device, batch: int = 256):
                 out.append(np.full(10, 0.1)); continue
             x = torch.from_numpy(np.asarray(S[sel], dtype=np.float32)).to(device)
             mk = torch.from_numpy(
-                np.arange(MAX_MOVES)[None, :] < lens[sel][:, None]).to(device)
+                np.arange(S.shape[1])[None, :] < lens[sel][:, None]).to(device)
             ps = []
             for n in nets:
                 lc, lo = n(x, mk)
@@ -188,13 +188,13 @@ def main() -> int:
     rows = (np.sort(rng.choice(pool, size=min(args.train_games, len(pool)),
                                replace=False))
             if args.train_games else pool)
-    print(f"訓練局數 {len(rows):,}，序列 {MAX_MOVES}×{S.shape[-1]}", flush=True)
+    print(f"訓練局數 {len(rows):,}，序列 {S.shape[1]}×{S.shape[-1]}", flush=True)
 
     Xtr = np.asarray(S[rows], dtype=np.float32)
     ltr = (np.abs(Xtr).sum(-1) > 0).sum(-1)
     ytr = torch.from_numpy(rank_id[rows]).long()
     Xt = torch.from_numpy(Xtr)
-    Mt = torch.from_numpy(np.arange(MAX_MOVES)[None, :] < ltr[:, None])
+    Mt = torch.from_numpy(np.arange(S.shape[1])[None, :] < ltr[:, None])
     print(f"  訓練張量 {Xt.nbytes / 1e9:.2f} GB", flush=True)
 
     soft, corn = SoftLabelCrossEntropy(10, decay=1.0), CornLoss(10)

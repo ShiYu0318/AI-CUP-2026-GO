@@ -34,11 +34,15 @@ _LINE_LUT = np.minimum(np.minimum.outer(_edge, _edge), 4).astype(np.float32)
 _STAR = {(3, 3), (3, 9), (3, 15), (9, 3), (9, 9), (9, 15), (15, 3), (15, 9), (15, 15)}
 
 
-def move_sequence(sgf: str, color: str | int) -> np.ndarray | None:
-    """回傳 (MAX_MOVES, N_MOVE_FEATURES) float32，只填**我方**的手，其餘補零。
+def move_sequence(sgf: str, color: str | int,
+                  max_moves: int = MAX_MOVES) -> np.ndarray | None:
+    """回傳 (max_moves, N_MOVE_FEATURES) float32，只填**我方**的手，其餘補零。
 
     無法解析、太短、或我方的手少於 MIN_MY_MOVES 時回傳 None
     （與 `game_features` 的判斷一致，兩邊的有效遮罩才對得起來）。
+
+    max_moves 預設 160。棋局手數中位數約 200，所以預設會截掉尾盤——
+    那是實打實被丟掉的資訊，值得用更長的序列測一次。
     """
     my = normalise_color(color)
     moves = parse_moves(sgf)
@@ -46,12 +50,12 @@ def move_sequence(sgf: str, color: str | int) -> np.ndarray | None:
         return None
 
     board = Board()
-    out = np.zeros((MAX_MOVES, N_MOVE_FEATURES), dtype=np.float32)
+    out = np.zeros((max_moves, N_MOVE_FEATURES), dtype=np.float32)
     k = 0
     prev_mine: tuple[int, int] | None = None
 
     for t, (col, r, c) in enumerate(moves):
-        if k >= MAX_MOVES:
+        if k >= max_moves:
             break
         captured = board.play(col, r, c)
         if col != my:
@@ -89,18 +93,18 @@ def move_sequence(sgf: str, color: str | int) -> np.ndarray | None:
     return out if k >= MIN_MY_MOVES else None
 
 
-def batch_move_sequences(sgfs, colors):
-    """一批棋局 → (N, MAX_MOVES, N_MOVE_FEATURES) float16 與布林有效遮罩。
+def batch_move_sequences(sgfs, colors, max_moves: int = MAX_MOVES):
+    """一批棋局 → (N, max_moves, N_MOVE_FEATURES) float16 與布林有效遮罩。
 
     float16 就夠：所有欄位都已正規化到 [0, 1]，
     而 (1M, 160, 12) 用 float32 要 7.7 GB、float16 只要 3.8 GB。
     """
     n = len(sgfs)
-    out = np.zeros((n, MAX_MOVES, N_MOVE_FEATURES), dtype=np.float16)
+    out = np.zeros((n, max_moves, N_MOVE_FEATURES), dtype=np.float16)
     ok = np.zeros(n, dtype=bool)
     for i, (s, c) in enumerate(zip(sgfs, colors)):
         try:
-            v = move_sequence(s, c)
+            v = move_sequence(s, c, max_moves=max_moves)
         except Exception:                    # 單局壞掉不該讓整批失敗
             v = None
         if v is not None:

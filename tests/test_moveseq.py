@@ -86,3 +86,38 @@ def test_move_number_is_increasing():
 def test_min_my_moves_constant_is_respected():
     v = move_sequence(_sgf(), "B")
     assert int(sequence_lengths(v[None])[0]) >= MIN_MY_MOVES
+
+
+# ---------------------------------------------------------------------------
+# 序列長度可調：預設 160 會截掉尾盤（棋局手數中位數約 200）
+# ---------------------------------------------------------------------------
+
+def test_max_moves_default_is_unchanged():
+    """預設值變了會讓既有的序列庫與模型全部對不上。"""
+    assert MAX_MOVES == 160
+
+
+def test_longer_window_captures_more_moves():
+    v160 = move_sequence(_sgf(500), "B")
+    v300 = move_sequence(_sgf(500), "B", max_moves=300)
+    assert v300.shape[0] == 300
+    assert int(sequence_lengths(v300[None])[0]) > int(sequence_lengths(v160[None])[0])
+
+
+def test_longer_window_is_a_prefix_extension():
+    """加長視窗不該改變前面已經算好的手——否則新舊模型的語意就不一致了。"""
+    a = move_sequence(_sgf(500), "B")
+    b = move_sequence(_sgf(500), "B", max_moves=300)
+    assert np.array_equal(a, b[:MAX_MOVES])
+
+
+def test_batch_respects_max_moves():
+    S, ok = batch_move_sequences([_sgf(400)], ["B"], max_moves=240)
+    assert S.shape == (1, 240, N_MOVE_FEATURES) and ok.all()
+
+
+def test_short_game_unaffected_by_longer_window():
+    """短棋局在任何視窗下都該得到同樣的內容（其餘補零）。"""
+    a = move_sequence(_sgf(80), "B")
+    b = move_sequence(_sgf(80), "B", max_moves=240)
+    assert np.array_equal(a, b[:MAX_MOVES]) and not b[MAX_MOVES:].any()

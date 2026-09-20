@@ -86,6 +86,23 @@ EXPERIMENTS = [
         "json": "artifacts/blend_seqfull.json",
     },
     {
+        "name": "seq_240moves",
+        "why": "序列只看前 160 手，但棋局手數中位數是 222——**平均丟掉 25%，"
+               "而且只有 16.7% 的棋局被完整涵蓋**。丟掉的還是尾盤，"
+               "而官子填空、終局打吃正是最強的棋力訊號所在。240 手可涵蓋 96%",
+        "train": ["python3", "scripts/train_rank_seq.py",
+                  "--sequences", "cache/sequences240.npy",
+                  "--extra-sequences", "cache/sequences240_opp.npy",
+                  "--seeds", "3", "--steps", "12000", "--train-games", "300000",
+                  "--out", "cache/rank_seq240"],
+        "produces": "cache/rank_seq240/models.pt",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+                 "--json-out", "artifacts/blend_seq240.json"],
+        "eval_env": {"AICUP_SEQ": "cache/rank_seq240/models.pt",
+                     "AICUP_SEQ_STORES": "cache/sequences240.npy,cache/sequences240_opp.npy"},
+        "json": "artifacts/blend_seq240.json",
+    },
+    {
         "name": "seq_wider",
         "why": "序列模型 width=128。加寬到 192 測容量是否還是瓶頸——"
                "若無增益，代表瓶頸在每手 24 維的特徵，而不在模型",

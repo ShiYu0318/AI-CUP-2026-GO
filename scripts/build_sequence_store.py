@@ -41,13 +41,14 @@ def _flip(colors):
 
 
 def _worker(args):
-    file_idx, path, limit, opponent = args
+    file_idx, path, limit, opponent, max_moves = args
     d = pd.read_csv(path, usecols=["color", "sgf_content"], nrows=limit)
     colors = d["color"].tolist()
     if opponent:
         colors = _flip(colors)
     t0 = time.time()
-    S, ok = batch_move_sequences(d["sgf_content"].tolist(), colors)
+    S, ok = batch_move_sequences(d["sgf_content"].tolist(), colors,
+                                 max_moves=max_moves)
     np.savez(os.path.join(CACHE_DIR, f"_seq{file_idx:02d}.npz"), S=S, ok=ok)
     return file_idx, len(d), int(ok.sum()), time.time() - t0
 
@@ -60,6 +61,9 @@ def main() -> int:
     ap.add_argument("--opponent", action="store_true",
                     help="抽對手視角的序列（執色反轉）。對手視角在整局統計上值 +0.05，"
                          "序列上很可能也有")
+    ap.add_argument("--max-moves", type=int, default=MAX_MOVES,
+                    help="每局取前幾手。預設 160；棋局手數中位數約 200，"
+                         "所以預設會截掉尾盤")
     ap.add_argument("--out", default="cache/sequences.npy")
     args = ap.parse_args()
     if args.opponent and args.out == "cache/sequences.npy":
@@ -73,7 +77,8 @@ def main() -> int:
 
     os.makedirs(CACHE_DIR, exist_ok=True)
     files = training_files(args.training_dir)
-    jobs = [(i, p, args.limit, args.opponent) for i, p in enumerate(files)]
+    jobs = [(i, p, args.limit, args.opponent, args.max_moves)
+            for i, p in enumerate(files)]
 
     t0 = time.time()
     with ctx.Pool(min(args.nproc, len(jobs))) as pool:
@@ -86,7 +91,7 @@ def main() -> int:
         z = np.load(os.path.join(CACHE_DIR, f"_seq{fi:02d}.npz"))
         parts.append(z["S"]); oks.append(z["ok"])
     S = np.concatenate(parts); ok = np.concatenate(oks)
-    assert S.shape[1:] == (MAX_MOVES, N_MOVE_FEATURES)
+    assert S.shape[1:] == (args.max_moves, N_MOVE_FEATURES)
 
     np.save(args.out, S)
     np.save(args.out.replace(".npy", "_ok.npy"), ok)

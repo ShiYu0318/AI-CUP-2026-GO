@@ -52,7 +52,9 @@ GAME = os.environ.get("AICUP_GAME", "cache/rank_mlp_opp_big/models.pt")
 QUESTION = os.environ.get("AICUP_QUESTION", "cache/rank_question_opp/models.pt")
 SEQ = os.environ.get("AICUP_SEQ", "cache/rank_seq_opp/models.pt")
 FEATS = ["cache/features.npy", "cache/features_opp.npy"]
-SEQS = ["cache/sequences.npy", "cache/sequences_opp.npy"]
+SEQS = os.environ.get(
+    "AICUP_SEQ_STORES",
+    "cache/sequences.npy,cache/sequences_opp.npy").split(",")
 
 
 def pick_device():
@@ -127,6 +129,8 @@ class Components:
         lens = np.zeros(len(S), dtype=np.int64)
         lens[used] = (np.abs(np.asarray(S[used], dtype=np.float32)).sum(-1) > 0).sum(-1)
         return _log(self._sp(nets, S, ok, lens, q.game_rows, self.dev))
+        # 註：`train_rank_seq.question_posteriors` 的 mask 長度由 S.shape[1] 推得，
+        #     所以換成 240 手的序列庫不需要改任何東西。
 
 
 def score_blend(parts, weights, y, cal, sco, stacker_c=0.0, sizes=None):
