@@ -111,12 +111,18 @@ def main() -> int:
     ap.add_argument("--train-games", type=int, default=300000,
                     help="抽多少局訓練（0 = 全部）")
     ap.add_argument("--corn-weight", type=float, default=0.5)
+    ap.add_argument("--threads", type=int, default=0,
+                    help="CPU 執行緒數。0 = 不動（torch 在這台 10 核機器上預設只用 4）。"
+                         "⚠️ 與 MPS 工作並行時不要開太大——"
+                         "MPS 那邊的資料載入也要 CPU，搶光反而兩邊都慢")
     ap.add_argument("--device", default="auto")
     ap.add_argument("--extra-features", nargs="*", default=[],
                     help="額外的特徵庫，沿特徵軸串接。`cache/features_opp.npy` 是**對手視角**的特徵（同盤棋、執色反轉）：伺服器把你配對給實力相近的人，所以對手的表現反映配對分級、而分級反映你的穩定實力。實測 6 組獨立題目 +0.0491±0.0232（6/6 勝，t=5.19）")
     ap.add_argument("--out", default="cache/rank_mlp")
     args = ap.parse_args()
 
+    if args.threads > 0:
+        torch.set_num_threads(args.threads)
     device = pick_device(args.device)
     os.makedirs(args.out, exist_ok=True)
     print(f"device = {device}", flush=True)

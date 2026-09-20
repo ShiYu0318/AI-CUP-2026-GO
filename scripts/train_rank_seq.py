@@ -219,10 +219,16 @@ def main() -> int:
                     help="額外的序列庫，沿**特徵軸**串接（每一手的向量變長）。"
                          "`cache/sequences_opp.npy` 是對手視角的逐手序列——"
                          "對手視角在整局統計上值 +0.05")
+    ap.add_argument("--threads", type=int, default=0,
+                    help="CPU 執行緒數。0 = 不動（torch 在這台 10 核機器上預設只用 4）。"
+                         "⚠️ 與 MPS 工作並行時不要開太大——"
+                         "MPS 那邊的資料載入也要 CPU，搶光反而兩邊都慢")
     ap.add_argument("--device", default="auto")
     ap.add_argument("--out", default="cache/rank_seq")
     args = ap.parse_args()
 
+    if args.threads > 0:
+        torch.set_num_threads(args.threads)
     device = pick_device(args.device)
     os.makedirs(args.out, exist_ok=True)
     print(f"device = {device}", flush=True)
