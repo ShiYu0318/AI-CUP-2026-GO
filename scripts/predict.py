@@ -269,12 +269,19 @@ def main() -> int:
                          "固定權重融合 0.5639 → stacker 0.5727"
                          "（+0.0088，8/8 勝，t=5.00）。C 從 0.3 到 3.0 是平台。"
                          "stacker 在**校準題目**上現場擬合，套用到測試集")
-    ap.add_argument("--rank-seq", default="cache/rank_seq_opp/models.pt",
+    ap.add_argument("--rank-seq", nargs="*",
+                    default=["cache/rank_seq_opp/models.pt",
+                             "cache/rank_seq_opp_full/models.pt",
+                             "cache/rank_seq_w192/models.pt"],
                     help="競賽二的逐手序列模型（dilated 1D-CNN）。"
                          "589 維是整局的統計摘要，看不到『愚形出現在第 30 手還是第 150 手』。"
-                         "預設是**雙視角**版本（我方 12 維 + 對手 12 維 = 24 維/手），"
-                         "單獨就有 0.5460——比整條對手視角管線（0.5402）還高，"
-                         "而且完全不用 589 維手工特徵。設為空字串則停用")
+                         "雙視角（我方 12 維 + 對手 12 維 = 24 維/手）。"
+                         "**預設是三個變體的集成**：基準（40 萬局 w128）、"
+                         "全量（78 萬局 w128）、加寬（40 萬局 w192）。"
+                         "三者個別相對單一模型只有 +0.004~0.006（都低於 0.005 門檻），"
+                         "但誤差來源不同（資料量 vs 容量），合起來 "
+                         "0.5703 → 0.5782（+0.0079，8/8 勝，t=9.15）。"
+                         "給空清單則停用序列成分")
     ap.add_argument("--extra-sequences", nargs="*",
                     default=["cache/sequences_opp.npy"],
                     help="序列模型的額外視角，必須與訓練時一致。"
@@ -345,22 +352,29 @@ def main() -> int:
             print(f"  ＋題目層級模型（{len(qnets)} 個，融合權重 "
                   f"{qck['blend_weight']:.1f}）", flush=True)
 
-    seq_nets, seq_dev = None, None
-    if args.rank_seq and os.path.exists(args.rank_seq) and args.seq_weight > 0:
+    # 序列成分：可以是多個 checkpoint 的集成。每個 checkpoint 成為 stacker 的
+    # 一個獨立成分（不是先平均），因為它們的誤差來源不同——
+    # 讓 stacker 自己學怎麼配權重，比事先平均好。
+    seq_models, seq_dev = [], None
+    paths = [p_ for p_ in (args.rank_seq or []) if os.path.exists(p_)]
+    if paths and args.seq_weight > 0:
         import torch
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         from train_rank_seq import SeqRankNet
         seq_dev = torch.device("cuda" if torch.cuda.is_available() else
                                "mps" if torch.backends.mps.is_available() else "cpu")
-        sck = torch.load(args.rank_seq, map_location=seq_dev, weights_only=False)
-        seq_nets = []
-        _nfeat = 12 * (1 + len(sck["args"].get("extra_sequences", [])))
-        for sd in sck["models"]:
-            n = SeqRankNet(n_feat=_nfeat, width=sck["args"]["width"])
-            n.load_state_dict(sd); n.eval().to(seq_dev)
-            seq_nets.append(n)
-        print(f"  ＋逐手序列模型（{len(seq_nets)} 個，融合權重 {args.seq_weight}）",
-              flush=True)
+        for path in paths:
+            sck = torch.load(path, map_location=seq_dev, weights_only=False)
+            nets = []
+            _nfeat = 12 * (1 + len(sck["args"].get("extra_sequences", [])))
+            for sd in sck["models"]:
+                n = SeqRankNet(n_feat=_nfeat, width=sck["args"]["width"])
+                n.load_state_dict(sd); n.eval().to(seq_dev)
+                nets.append(n)
+            seq_models.append((os.path.basename(os.path.dirname(path)), nets))
+        print(f"  ＋逐手序列模型 {len(seq_models)} 個變體："
+              f"{', '.join(f'{t}({len(n)} seed)' for t, n in seq_models)}", flush=True)
+    seq_nets = seq_models[0][1] if seq_models else None      # 固定權重路徑用第一個
 
     model = None if rank_mlp else _fit_rank_model("cache/rank_model.pkl",
                                                   args.train_per_rank)
@@ -389,7 +403,7 @@ def main() -> int:
             _parts["question"] = _question_log_posteriors(rank_question, _X, _ok,
                                                           _q.game_rows)
         _lo = np.log(np.clip(_P, 1e-12, None))
-        if seq_nets is not None:
+        if seq_models:
             from aicup.moveseq import MAX_MOVES as _MM
             _sp = ["cache/sequences.npy"] + list(args.extra_sequences)
             _Ss = [np.load(x, mmap_mode="r") for x in _sp]
@@ -400,11 +414,13 @@ def main() -> int:
             _blocks = [np.concatenate(
                 [np.asarray(z[r[_sok[r]]], dtype=np.float32) for z in _Ss], axis=-1)
                 for r in _q.game_rows]
-            _ls = np.log(np.clip(_seq_posteriors_from_blocks(seq_nets, _blocks, seq_dev),
-                                 1e-12, None))
             from aicup.question_model import blend_log_posteriors as _blp
-            _lo = _blp(_lo, _ls, w=args.seq_weight)
-            _parts["seq"] = _ls
+            for _tag, _nets in seq_models:
+                _l = np.log(np.clip(
+                    _seq_posteriors_from_blocks(_nets, _blocks, seq_dev), 1e-12, None))
+                _parts[f"seq_{_tag}"] = _l
+            _ls = _parts[f"seq_{seq_models[0][0]}"]
+            _lo = _blp(_lo, _ls, w=args.seq_weight)   # 固定權重路徑只用第一個變體
 
         _sizes = np.array([max(int(_ok[r].sum()), 1) for r in _q.game_rows])
         stacker = None
@@ -463,13 +479,13 @@ def main() -> int:
             P = model.question_proba(feats, how=args.aggregation)
             parts = {"game": np.log(np.clip(P, 1e-12, None))}
         lo = np.log(np.clip(P, 1e-12, None))
-        if seq_nets is not None:
+        if seq_models:
             from aicup.question_model import blend_log_posteriors as _blp
             blocks = _question_sequences(df, with_opponent=bool(args.extra_sequences))
-            ls = np.log(np.clip(
-                _seq_posteriors_from_blocks(seq_nets, blocks, seq_dev), 1e-12, None))
-            lo = _blp(lo, ls, w=args.seq_weight)
-            parts["seq"] = ls
+            for tag_, nets_ in seq_models:
+                parts[f"seq_{tag_}"] = np.log(np.clip(
+                    _seq_posteriors_from_blocks(nets_, blocks, seq_dev), 1e-12, None))
+            lo = _blp(lo, parts[f"seq_{seq_models[0][0]}"], w=args.seq_weight)
         if args.decode == "threshold":
             T, th, stacker = calib
             if stacker is not None:

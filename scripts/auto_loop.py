@@ -78,90 +78,68 @@ BASELINE = 0.4631      # 官方 baseline（競賽二）
 #             排程器用它決定能同時跑幾個——26 GB 的機器上盲目平行會直接爆掉，
 #             而 swap 一旦發生，兩個工作都會慢十倍以上，比序列執行還糟。
 EXPERIMENTS = [
+    # ── 2026-09-21 方法調整 ────────────────────────────────────────────────
+    # 第一批五個實驗（加 seed / 加資料 / 加容量 / 加視窗）全部落在 +0.001~0.005，
+    # 沒有一個通過門檻。這不是巧合，是**放大既有東西的天花板**。
+    # 但把三個「個別不夠」的變體**集成**後拿到 +0.0079（8/8，t=9.15）。
+    #
+    # 所以佇列改成兩類：
+    #   (a) 製造**誤差來源不同**的新變體，餵給集成
+    #   (b) 修掉第一批裡設計錯的實驗
+    # 不再排「同一個模型調大一點」這種實驗。
     {
-        "name": "seq_5seed",
+        "name": "seq_240_fair",
         "device": "mps",
         "mem_gb": 6.5,
-        "why": "序列模型目前只有 3 個 seed。加到 5 個純粹降變異，"
-               "是最便宜的增益，也能檢驗現有 0.5639 有多少是 seed 運氣",
-        "train": ["python3", "scripts/train_rank_seq.py",
-                  "--extra-sequences", "cache/sequences_opp.npy",
-                  "--seeds", "5", "--steps", "12000", "--train-games", "400000",
-                  "--out", "cache/rank_seq_opp5"],
-        "produces": "cache/rank_seq_opp5/models.pt",
-        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
-                 "--json-out", "artifacts/blend_seq5.json"],
-        "eval_env": {"AICUP_SEQ": "cache/rank_seq_opp5/models.pt"},
-        "json": "artifacts/blend_seq5.json",
-    },
-    {
-        "name": "seq_full_data",
-        "device": "mps",
-        "mem_gb": 7.5,
-        "why": "序列模型只訓練 40 萬局，單局 MLP 是 78 萬局。"
-               "序列模型自己就比整條手工特徵管線強，值得餵滿",
-        "train": ["python3", "scripts/train_rank_seq.py",
-                  "--extra-sequences", "cache/sequences_opp.npy",
-                  "--seeds", "3", "--steps", "16000", "--train-games", "0",
-                  "--out", "cache/rank_seq_opp_full"],
-        "produces": "cache/rank_seq_opp_full/models.pt",
-        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
-                 "--json-out", "artifacts/blend_seqfull.json"],
-        "eval_env": {"AICUP_SEQ": "cache/rank_seq_opp_full/models.pt"},
-        "json": "artifacts/blend_seqfull.json",
-    },
-    {
-        "name": "seq_240moves",
-        "device": "mps",
-        "mem_gb": 5.0,
-        "why": "序列只看前 160 手，但棋局手數中位數是 222——**平均丟掉 25%，"
-               "而且只有 16.7% 的棋局被完整涵蓋**。丟掉的還是尾盤，"
-               "而官子填空、終局打吃正是最強的棋力訊號所在。240 手可涵蓋 96%",
+        "why": "重做 240 手實驗。第一次用 30 萬局、對照組 40 萬局，"
+               "**少了 25% 的資料**，所以 −0.0055 混淆了『視窗變長』與『資料變少』。"
+               "這次用相同的 40 萬局，只變動視窗長度",
         "train": ["python3", "scripts/train_rank_seq.py",
                   "--sequences", "cache/sequences240.npy",
                   "--extra-sequences", "cache/sequences240_opp.npy",
-                  "--seeds", "3", "--steps", "12000", "--train-games", "300000",
-                  "--out", "cache/rank_seq240"],
-        "produces": "cache/rank_seq240/models.pt",
+                  "--seeds", "3", "--steps", "12000", "--train-games", "400000",
+                  "--out", "cache/rank_seq240_fair"],
+        "produces": "cache/rank_seq240_fair/models.pt",
         "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
-                 "--json-out", "artifacts/blend_seq240.json"],
-        "eval_env": {"AICUP_SEQ": "cache/rank_seq240/models.pt",
+                 "--json-out", "artifacts/blend_seq240fair.json"],
+        "eval_env": {"AICUP_SEQ": "cache/rank_seq240_fair/models.pt",
                      "AICUP_SEQ_STORES": "cache/sequences240.npy,cache/sequences240_opp.npy"},
-        "json": "artifacts/blend_seq240.json",
+        "json": "artifacts/blend_seq240fair.json",
     },
     {
-        "name": "mlp_8seed",
-        "device": "cpu",
-        "mem_gb": 5.0,
-        "why": "單局 MLP 目前 5 個 seed。加到 8 個降變異。"
-               "**走 CPU**——實測 MLP 在 MPS 上反而慢 2.5 倍，"
-               "而且這樣能與序列模型的 MPS 訓練真正並行",
-        "train": ["python3", "scripts/train_rank_mlp.py",
-                  "--extra-features", "cache/features_opp.npy",
-                  "--seeds", "8", "--steps", "20000", "--hidden", "1024",
-                  "--train-games", "0", "--device", "cpu",
-                  "--out", "cache/rank_mlp_opp8"],
-        "produces": "cache/rank_mlp_opp8/models.pt",
-        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
-                 "--json-out", "artifacts/blend_mlp8.json"],
-        "eval_env": {"AICUP_GAME": "cache/rank_mlp_opp8/models.pt"},
-        "json": "artifacts/blend_mlp8.json",
-    },
-    {
-        "name": "seq_wider",
+        "name": "seq_narrow_deep",
         "device": "mps",
-        "mem_gb": 4.5,
-        "why": "序列模型 width=128。加寬到 192 測容量是否還是瓶頸——"
-               "若無增益，代表瓶頸在每手 24 維的特徵，而不在模型",
+        "mem_gb": 6.5,
+        "why": "**製造誤差來源不同的變體**：窄而深（width 96、dilation 到 16）"
+               "而不是寬而淺。集成要的是分歧，不是每個成分都更強——"
+               "w192 已經證明『更寬』有用，這裡測『更深』是不是另一個方向",
         "train": ["python3", "scripts/train_rank_seq.py",
                   "--extra-sequences", "cache/sequences_opp.npy",
-                  "--seeds", "3", "--steps", "12000", "--train-games", "400000",
-                  "--width", "192", "--out", "cache/rank_seq_w192"],
-        "produces": "cache/rank_seq_w192/models.pt",
+                  "--seeds", "3", "--steps", "14000", "--train-games", "400000",
+                  "--width", "96", "--out", "cache/rank_seq_narrow"],
+        "produces": "cache/rank_seq_narrow/models.pt",
         "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
-                 "--json-out", "artifacts/blend_seqw192.json"],
-        "eval_env": {"AICUP_SEQ": "cache/rank_seq_w192/models.pt"},
-        "json": "artifacts/blend_seqw192.json",
+                 "--json-out", "artifacts/blend_seqnarrow.json"],
+        "eval_env": {"AICUP_SEQ": "cache/rank_seq_narrow/models.pt"},
+        "json": "artifacts/blend_seqnarrow.json",
+    },
+    {
+        "name": "mlp_wider",
+        "device": "cpu",
+        "mem_gb": 5.5,
+        "why": "單局 MLP 的 hidden 1024 → 1536。加 seed 已證實無效（+0.0010），"
+               "但**容量**這個方向在序列模型上有效（w192 +0.0061），值得在 MLP 上試一次。"
+               "走 CPU，與序列訓練真正並行",
+        "train": ["python3", "scripts/train_rank_mlp.py",
+                  "--extra-features", "cache/features_opp.npy",
+                  "--seeds", "3", "--steps", "20000", "--hidden", "1536",
+                  "--train-games", "0", "--device", "cpu",
+                  "--out", "cache/rank_mlp_w1536"],
+        "produces": "cache/rank_mlp_w1536/models.pt",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+                 "--json-out", "artifacts/blend_mlpw1536.json"],
+        "eval_env": {"AICUP_GAME": "cache/rank_mlp_w1536/models.pt"},
+        "json": "artifacts/blend_mlpw1536.json",
     },
 ]
 
