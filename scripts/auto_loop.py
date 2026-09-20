@@ -21,7 +21,23 @@
 本專案的 seed 間標準差約 ±0.010，所以低於 FLOOR 的「增益」多半是雜訊。
 這是把「能寫死的就寫死」制度化——不讓迴圈去追雜訊。
 
-**3. 它不會自己改 `predict.py` 的預設。**
+**3. 平行化靠的是「裝置互補」，不是單純開更多工作。**
+實測同一台機器上（batch 與模型都用實際訓練的設定）：
+
+    逐手序列 1D-CNN（batch 256, 240 手）   MPS 435 ms   CPU 1849 ms   → MPS 快 4.25×
+    單局 MLP（1178 維, batch 2048）        MPS 107 ms   CPU   43 ms   → CPU 快 2.5×
+
+卷積在 MPS 上大贏，但**密集層的 MLP 在 MPS 上反而慢**——
+每步要把 9.6 MB 搬上 GPU，而矩陣乘在 10 核 CPU 上已經夠快，搬運開銷吃掉全部好處。
+
+MPS 只有一張 GPU，**兩個 MPS 工作並行不會有 2× 吞吐**，它們搶同一個裝置。
+所以排程器限制**同時最多 1 個 MPS 工作**，其餘名額留給 CPU 工作——
+這樣才是真的並行，而不是互相拖慢。
+
+（順帶：這台是 Apple Silicon，**CUDA 永遠不可用**。`pick_device()` 的順序是
+ cuda → mps → cpu，所以租到 NVIDIA GPU 時同一份程式不用改就會走 CUDA。）
+
+**4. 它不會自己改 `predict.py` 的預設。**
 通過 gate 的實驗會被記錄、commit，並把建議的一行改動印出來，
 但換預設仍是人（或下一個 session）看過帳本後的決定。
 自動改推論預設是不可逆的外顯行為，而且本專案已經被「安靜地換掉東西」
@@ -56,12 +72,15 @@ BASELINE = 0.4631      # 官方 baseline（競賽二）
 #   produces  訓練會產出的檔案；已存在就跳過訓練
 #   eval      評估指令，必須輸出 --json-out 指定的 json
 #   json      評估結果的 json 路徑
+#   device    "mps" 或 "cpu"。實測（見下方）兩類模型的最佳裝置**相反**，
+#             排程器據此決定誰能跟誰並行。
 #   mem_gb    訓練時的常駐記憶體估計（訓練張量 + 模型 + 工作空間）。
 #             排程器用它決定能同時跑幾個——26 GB 的機器上盲目平行會直接爆掉，
 #             而 swap 一旦發生，兩個工作都會慢十倍以上，比序列執行還糟。
 EXPERIMENTS = [
     {
         "name": "seq_5seed",
+        "device": "mps",
         "mem_gb": 6.5,
         "why": "序列模型目前只有 3 個 seed。加到 5 個純粹降變異，"
                "是最便宜的增益，也能檢驗現有 0.5639 有多少是 seed 運氣",
@@ -77,6 +96,7 @@ EXPERIMENTS = [
     },
     {
         "name": "seq_full_data",
+        "device": "mps",
         "mem_gb": 7.5,
         "why": "序列模型只訓練 40 萬局，單局 MLP 是 78 萬局。"
                "序列模型自己就比整條手工特徵管線強，值得餵滿",
@@ -92,6 +112,7 @@ EXPERIMENTS = [
     },
     {
         "name": "seq_240moves",
+        "device": "mps",
         "mem_gb": 5.0,
         "why": "序列只看前 160 手，但棋局手數中位數是 222——**平均丟掉 25%，"
                "而且只有 16.7% 的棋局被完整涵蓋**。丟掉的還是尾盤，"
@@ -109,7 +130,26 @@ EXPERIMENTS = [
         "json": "artifacts/blend_seq240.json",
     },
     {
+        "name": "mlp_8seed",
+        "device": "cpu",
+        "mem_gb": 5.0,
+        "why": "單局 MLP 目前 5 個 seed。加到 8 個降變異。"
+               "**走 CPU**——實測 MLP 在 MPS 上反而慢 2.5 倍，"
+               "而且這樣能與序列模型的 MPS 訓練真正並行",
+        "train": ["python3", "scripts/train_rank_mlp.py",
+                  "--extra-features", "cache/features_opp.npy",
+                  "--seeds", "8", "--steps", "20000", "--hidden", "1024",
+                  "--train-games", "0", "--device", "cpu",
+                  "--out", "cache/rank_mlp_opp8"],
+        "produces": "cache/rank_mlp_opp8/models.pt",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+                 "--json-out", "artifacts/blend_mlp8.json"],
+        "eval_env": {"AICUP_GAME": "cache/rank_mlp_opp8/models.pt"},
+        "json": "artifacts/blend_mlp8.json",
+    },
+    {
         "name": "seq_wider",
+        "device": "mps",
         "mem_gb": 4.5,
         "why": "序列模型 width=128。加寬到 192 測容量是否還是瓶頸——"
                "若無增益，代表瓶頸在每手 24 維的特徵，而不在模型",
@@ -245,15 +285,24 @@ def main() -> int:
     def used_mem():
         return sum(e.get("mem_gb", 4.0) for e, *_ in running)
 
+    def mps_running():
+        return sum(1 for e, *_ in running if e.get("device", "mps") == "mps")
+
     def can_start(exp):
         if len(running) >= args.jobs:
+            return False
+        # MPS 只有一張 GPU：兩個 MPS 工作並行只會互相拖慢，不會提高吞吐。
+        if exp.get("device", "mps") == "mps" and mps_running() >= 1:
             return False
         return used_mem() + exp.get("mem_gb", 4.0) <= budget or not running
 
     while pending or running or to_gate:
         # 1) 在預算內盡量塞新的訓練
-        while pending and can_start(pending[0]):
-            exp = pending.pop(0)
+        while True:
+            idx = next((i for i, e in enumerate(pending) if can_start(e)), None)
+            if idx is None:
+                break
+            exp = pending.pop(idx)
             if not exp.get("train") or os.path.exists(os.path.join(ROOT, exp["produces"])):
                 log(f"[{exp['name']}] 產物已存在，直接排入 gate")
                 to_gate.append(exp)
@@ -261,7 +310,8 @@ def main() -> int:
             lp = os.path.join(ROOT, "artifacts", f"train_{exp['name']}.log")
             proc, fh = spawn(exp["train"], lp)
             running.append((exp, proc, fh, lp, time.time()))
-            log(f"[{exp['name']}] 開始訓練（併發 {len(running)}/{args.jobs}，"
+            log(f"[{exp['name']}] 開始訓練於 {exp.get('device','mps').upper()}"
+                f"（併發 {len(running)}/{args.jobs}，"
                 f"預估佔用 {used_mem():.1f}/{budget:.1f} GB）")
             log(f"    {exp['why']}")
 
