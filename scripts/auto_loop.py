@@ -1,0 +1,236 @@
+"""無人值守的實驗迴圈：跑 → 用誠實協定 gate → 記錄 → commit → 跑下一個。
+
+**為什麼要有這支**：這個專案的瓶頸不是方法，是**迭代速度**。
+每個實驗都要人在旁邊等通知、看結果、決定下一步，一晚上只能推進兩三個。
+這支把「跑實驗 → 評估 → 記錄」變成一個佇列，整夜自己推進。
+
+## 設計上的三個刻意選擇
+
+**1. Gate 用的是 RESULTS.md〇章的協定，不是訓練腳本自己報的分數。**
+訓練腳本內建的評估是同集校準（樂觀）。這裡一律走 `scripts/eval_blend.py`：
+8 組 player-disjoint、校準與評分玩家不重疊、DP 切點。
+
+**2. FLOOR：改進小於門檻就不算贏。**
+本專案的 seed 間標準差約 ±0.010，所以低於 FLOOR 的「增益」多半是雜訊。
+這是把「能寫死的就寫死」制度化——不讓迴圈去追雜訊。
+
+**3. 它不會自己改 `predict.py` 的預設。**
+通過 gate 的實驗會被記錄、commit，並把建議的一行改動印出來，
+但換預設仍是人（或下一個 session）看過帳本後的決定。
+自動改推論預設是不可逆的外顯行為，而且本專案已經被「安靜地換掉東西」
+咬過五次——多等一次人工確認，比半夜自動上線一個沒人看過的設定安全。
+
+用法：
+    python3 scripts/auto_loop.py --dry-run      # 只印佇列，不執行
+    nohup python3 scripts/auto_loop.py > artifacts/auto_loop.log 2>&1 &
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STATE = "artifacts/auto_loop_state.json"
+LEDGER = "RESULTS.md"
+FLOOR = 0.005          # 小於這個增益不算贏（seed 間標準差約 ±0.010）
+BASELINE = 0.4631      # 官方 baseline（競賽二）
+
+
+# ── 實驗佇列 ────────────────────────────────────────────────────────────────
+# 每一項：
+#   name      識別名，會寫進帳本
+#   why       這個實驗在問什麼（寫不出來的實驗不該進佇列）
+#   train     產生模型的指令（None = 只評估，不訓練）
+#   produces  訓練會產出的檔案；已存在就跳過訓練
+#   eval      評估指令，必須輸出 --json-out 指定的 json
+#   json      評估結果的 json 路徑
+EXPERIMENTS = [
+    {
+        "name": "seq_5seed",
+        "why": "序列模型目前只有 3 個 seed。加到 5 個純粹降變異，"
+               "是最便宜的增益，也能檢驗現有 0.5639 有多少是 seed 運氣",
+        "train": ["python3", "scripts/train_rank_seq.py",
+                  "--extra-sequences", "cache/sequences_opp.npy",
+                  "--seeds", "5", "--steps", "12000", "--train-games", "400000",
+                  "--out", "cache/rank_seq_opp5"],
+        "produces": "cache/rank_seq_opp5/models.pt",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+                 "--json-out", "artifacts/blend_seq5.json"],
+        "eval_env": {"AICUP_SEQ": "cache/rank_seq_opp5/models.pt"},
+        "json": "artifacts/blend_seq5.json",
+    },
+    {
+        "name": "seq_full_data",
+        "why": "序列模型只訓練 40 萬局，單局 MLP 是 78 萬局。"
+               "序列模型自己就比整條手工特徵管線強，值得餵滿",
+        "train": ["python3", "scripts/train_rank_seq.py",
+                  "--extra-sequences", "cache/sequences_opp.npy",
+                  "--seeds", "3", "--steps", "16000", "--train-games", "0",
+                  "--out", "cache/rank_seq_opp_full"],
+        "produces": "cache/rank_seq_opp_full/models.pt",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+                 "--json-out", "artifacts/blend_seqfull.json"],
+        "eval_env": {"AICUP_SEQ": "cache/rank_seq_opp_full/models.pt"},
+        "json": "artifacts/blend_seqfull.json",
+    },
+    {
+        "name": "seq_wider",
+        "why": "序列模型 width=128。加寬到 192 測容量是否還是瓶頸——"
+               "若無增益，代表瓶頸在每手 24 維的特徵，而不在模型",
+        "train": ["python3", "scripts/train_rank_seq.py",
+                  "--extra-sequences", "cache/sequences_opp.npy",
+                  "--seeds", "3", "--steps", "12000", "--train-games", "400000",
+                  "--width", "192", "--out", "cache/rank_seq_w192"],
+        "produces": "cache/rank_seq_w192/models.pt",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+                 "--json-out", "artifacts/blend_seqw192.json"],
+        "eval_env": {"AICUP_SEQ": "cache/rank_seq_w192/models.pt"},
+        "json": "artifacts/blend_seqw192.json",
+    },
+]
+
+
+def log(msg: str) -> None:
+    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}", flush=True)
+
+
+def load_state() -> dict:
+    if os.path.exists(STATE):
+        with open(STATE) as f:
+            return json.load(f)
+    return {"production": None, "done": {}}
+
+
+def save_state(st: dict) -> None:
+    os.makedirs(os.path.dirname(STATE), exist_ok=True)
+    with open(STATE, "w") as f:
+        json.dump(st, f, indent=2, ensure_ascii=False)
+
+
+def run(cmd, env_extra=None, timeout=None) -> tuple[int, str]:
+    env = os.environ.copy()
+    env.update(env_extra or {})
+    p = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True,
+                       text=True, timeout=timeout)
+    return p.returncode, (p.stdout or "") + (p.stderr or "")
+
+
+def record(exp: dict, score: float, prod: float, verdict: str, detail: str) -> None:
+    """把結果寫進 RESULTS.md 的無效方法表或主線表——**成功失敗都要記**。"""
+    line = (f"| {datetime.now():%m-%d} | **{exp['name']}** | {score:.4f} | "
+            f"相對現況 {score - prod:+.4f}（門檻 {FLOOR:+.3f}）→ **{verdict}**。"
+            f"{exp['why']}。{detail} |\n")
+    path = os.path.join(ROOT, LEDGER)
+    with open(path, encoding="utf-8") as f:
+        s = f.read()
+    anchor = "## 四、修掉的靜默 bug"
+    if anchor not in s:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("\n" + line)
+        return
+    block = "\n### 自動迴圈的實驗紀錄\n\n| 日期 | 實驗 | 分數 | 結論 |\n|---|---|---:|---|\n"
+    if "### 自動迴圈的實驗紀錄" not in s:
+        s = s.replace(anchor, block + line + "\n---\n\n" + anchor)
+    else:
+        i = s.index("### 自動迴圈的實驗紀錄")
+        j = s.index("\n\n", s.index("|---|---|---:|---|", i))
+        s = s[:j + 1] + line + s[j + 1:]
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(s)
+
+
+def git_commit(msg: str) -> None:
+    run(["git", "add", "-A", "RESULTS.md", "artifacts/auto_loop_state.json"])
+    run(["git", "commit", "-q", "-m", msg])
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--floor", type=float, default=FLOOR)
+    ap.add_argument("--only", nargs="*", default=None, help="只跑指定的實驗名稱")
+    args = ap.parse_args()
+
+    st = load_state()
+    queue = [e for e in EXPERIMENTS
+             if (args.only is None or e["name"] in args.only)
+             and e["name"] not in st["done"]]
+
+    if args.dry_run:
+        log(f"佇列 {len(queue)} 項，門檻 {args.floor:+.3f}，"
+            f"目前生產分數 {st['production']}")
+        for e in queue:
+            log(f"  - {e['name']}：{e['why']}")
+        return 0
+
+    if st["production"] is None:
+        log("尚無生產分數，先跑一次目前的預設組合建立基準…")
+        rc, out = run(["python3", "scripts/eval_blend.py", "--seeds", "8",
+                       "--json-out", "artifacts/blend_default.json"])
+        if rc != 0:
+            log(f"基準評估失敗：\n{out[-1500:]}")
+            return 1
+        with open(os.path.join(ROOT, "artifacts/blend_default.json")) as f:
+            st["production"] = json.load(f)["best_score"]
+        save_state(st)
+        log(f"生產分數 = {st['production']:.4f}")
+
+    for exp in queue:
+        log("=" * 62)
+        log(f"實驗 {exp['name']}：{exp['why']}")
+
+        if exp.get("train") and not os.path.exists(os.path.join(ROOT, exp["produces"])):
+            log(f"  訓練中…（{' '.join(exp['train'][:3])} …）")
+            t0 = time.time()
+            rc, out = run(exp["train"])
+            if rc != 0:
+                log(f"  訓練失敗，跳過：\n{out[-1200:]}")
+                st["done"][exp["name"]] = {"status": "train_failed"}
+                save_state(st); continue
+            log(f"  訓練完成（{(time.time() - t0) / 60:.1f} 分）")
+        else:
+            log("  產物已存在，跳過訓練")
+
+        log("  用 8 組 player-disjoint 協定 gate…")
+        rc, out = run(exp["eval"], env_extra=exp.get("eval_env"))
+        if rc != 0:
+            log(f"  評估失敗，跳過：\n{out[-1200:]}")
+            st["done"][exp["name"]] = {"status": "eval_failed"}
+            save_state(st); continue
+
+        with open(os.path.join(ROOT, exp["json"])) as f:
+            res = json.load(f)
+        score, prod = res["best_score"], st["production"]
+        gain = score - prod
+        won = gain >= args.floor
+        verdict = "採用" if won else ("增益低於門檻" if gain > 0 else "無增益")
+        log(f"  分數 {score:.4f}（現況 {prod:.4f}，差 {gain:+.4f}）→ {verdict}")
+
+        detail = (f"建議把 `predict.py` 的 `--rank-seq` 預設改成 "
+                  f"`{exp.get('eval_env', {}).get('AICUP_SEQ', '?')}`"
+                  if won else "維持現況")
+        record(exp, score, prod, verdict, detail)
+        st["done"][exp["name"]] = {"score": score, "gain": gain, "won": won}
+        if won:
+            st["production"] = score
+        save_state(st)
+        git_commit(f"exp: {exp['name']} scores {score:.4f} ({verdict})")
+        log(f"  已記錄並 commit。{'生產分數更新為 %.4f' % score if won else ''}")
+
+    log("=" * 62)
+    log(f"佇列跑完。生產分數 {st['production']:.4f}"
+        f"（官方 baseline {BASELINE}，{st['production'] / BASELINE:.2f}×）")
+    won = [k for k, v in st["done"].items() if v.get("won")]
+    log(f"通過 gate 的實驗：{won or '無'}")
+    if won:
+        log("⚠️ 這支不會自己改 predict.py 的預設——請看 RESULTS.md 的建議後手動確認")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

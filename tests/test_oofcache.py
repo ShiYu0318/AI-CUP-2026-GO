@@ -137,3 +137,64 @@ def test_question_fingerprint_is_order_sensitive():
     a = [np.array([1, 2]), np.array([3, 4])]
     b = [np.array([3, 4]), np.array([1, 2])]
     assert question_fingerprint(a) != question_fingerprint(b)
+
+
+# ---------------------------------------------------------------------------
+# 融合評估器的核心：分數計算路徑
+# ---------------------------------------------------------------------------
+
+def test_blend_order_matches_prediction_pipeline():
+    """`eval_blend.score_blend` 的融合順序必須與 predict.py 一致，
+    否則快取加速換來的是「快速得到錯誤答案」。"""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from eval_blend import score_blend
+
+    from aicup.question_model import blend_log_posteriors
+    from aicup.scoring import (apply_temperature, apply_thresholds,
+                               expected_level, fit_temperature,
+                               optimise_thresholds, rank_final_score)
+
+    rng = np.random.default_rng(0)
+    n = 400
+    y = rng.integers(0, 10, n)
+
+    def post(strength):
+        lg = rng.normal(size=(n, 10)) * 0.5
+        lg[np.arange(n), y] += strength
+        lg -= lg.max(1, keepdims=True)
+        e = np.exp(lg)
+        return np.log(e / e.sum(1, keepdims=True))
+
+    parts = {"game": post(2.0), "question": post(1.2), "seq": post(1.6)}
+    cal, sco = np.arange(n // 2), np.arange(n // 2, n)
+    got = score_blend(parts, {"question": 0.2, "seq": 0.7}, y, cal, sco)
+
+    lo = blend_log_posteriors(parts["game"], parts["question"], w=0.2)
+    lo = blend_log_posteriors(lo, parts["seq"], w=0.7)
+    T = fit_temperature(lo[cal], y[cal])
+    ev = expected_level(apply_temperature(lo, T))
+    th = optimise_thresholds(ev[cal], y[cal])
+    want = rank_final_score(apply_thresholds(ev[sco], th), y[sco])
+    assert got == pytest.approx(want)
+
+
+def test_blend_with_zero_weight_ignores_component():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from eval_blend import score_blend
+
+    rng = np.random.default_rng(1)
+    n = 200
+    y = rng.integers(0, 10, n)
+    lg = rng.normal(size=(n, 10))
+    lg -= lg.max(1, keepdims=True)
+    g = np.log(np.exp(lg) / np.exp(lg).sum(1, keepdims=True))
+    junk = np.log(np.full((n, 10), 0.1))
+    cal, sco = np.arange(n // 2), np.arange(n // 2, n)
+    assert (score_blend({"game": g, "seq": junk}, {"seq": 0.0}, y, cal, sco)
+            == score_blend({"game": g}, {}, y, cal, sco))
