@@ -129,18 +129,30 @@ class Components:
         return _log(self._sp(nets, S, ok, lens, q.game_rows, self.dev))
 
 
-def score_blend(parts, weights, y, cal, sco):
+def score_blend(parts, weights, y, cal, sco, stacker_c=0.0, sizes=None):
     """parts: {name: log_post}；weights: {name: w}。回傳題目層級官方分數。
 
     融合順序固定為「單局 → 題目層級 → 序列」，與 `predict.py` 一致。
+
+    stacker_c > 0 時改用**學習式融合**（在 cal 上擬合、在 sco 上套用），
+    與 `predict.py --stacker` 的行為一致。
+    ⚠️ gate 用的標準必須與實際會上線的管線一致，
+    否則會用固定權重的分數去決定一個跑 stacker 的系統該不該換模型。
     """
-    lo = parts["game"]
-    for name in ("question", "seq"):
-        w = weights.get(name, 0.0)
-        if w > 0 and name in parts:
-            lo = blend_log_posteriors(lo, parts[name], w=w)
-    T = fit_temperature(lo[cal], y[cal])
-    ev = expected_level(apply_temperature(lo, T))
+    if stacker_c > 0 and len(parts) > 1:
+        from aicup.stacker import Stacker, stack_features
+        if sizes is None:
+            sizes = np.full(len(y), 12.0)
+        F = stack_features(parts, sizes)
+        ev = Stacker(C=stacker_c).fit(F[cal], y[cal], parts=parts).expected_level(F)
+    else:
+        lo = parts["game"]
+        for name in ("question", "seq"):
+            w = weights.get(name, 0.0)
+            if w > 0 and name in parts:
+                lo = blend_log_posteriors(lo, parts[name], w=w)
+        T = fit_temperature(lo[cal], y[cal])
+        ev = expected_level(apply_temperature(lo, T))
     th = optimise_thresholds(ev[cal], y[cal])
     return rank_final_score(apply_thresholds(ev[sco], th), y[sco])
 
@@ -153,6 +165,9 @@ def main() -> int:
     ap.add_argument("--grid", type=float, nargs="*", default=None)
     ap.add_argument("--w-question", type=float, default=0.2)
     ap.add_argument("--w-seq", type=float, default=0.7)
+    ap.add_argument("--stacker", type=float, default=1.0,
+                    help="學習式融合的 C（0 = 關閉，退回固定權重）。"
+                         "預設與 predict.py 一致，讓 gate 的標準等同會上線的管線")
     ap.add_argument("--cache-dir", default="artifacts/oof")
     ap.add_argument("--json-out", default=None, help="把結果寫成 json（給自動迴圈用）")
     args = ap.parse_args()
@@ -189,6 +204,7 @@ def main() -> int:
         inc = np.array([p in cs for p in pid])
         cal, sco = np.flatnonzero(inc), np.flatnonzero(~inc)
 
+        sizes = np.array([len(r) for r in q.game_rows], dtype=np.float64)
         if args.sweep:
             grid = args.grid or [0.0, 0.2, 0.4, 0.6, 0.8]
             for w in grid:
@@ -198,10 +214,13 @@ def main() -> int:
                     score_blend(parts, ws, y, cal, sco))
         else:
             for label, ws in (("只有單局", {}),
-                              ("＋題目層級", {"question": args.w_question}),
-                              ("＋題目層級＋序列（預設）",
-                               {"question": args.w_question, "seq": args.w_seq})):
+                              ("固定權重融合", {"question": args.w_question,
+                                           "seq": args.w_seq})):
                 rows.setdefault(label, []).append(score_blend(parts, ws, y, cal, sco))
+            if args.stacker > 0:
+                rows.setdefault("學習式融合（預設）", []).append(
+                    score_blend(parts, {}, y, cal, sco,
+                                stacker_c=args.stacker, sizes=sizes))
         print(f"  seed {seed}  " + "  ".join(f"{k}:{v[-1]:.4f}" for k, v in rows.items()),
               flush=True)
 

@@ -1,10 +1,11 @@
 {
-  "production": 0.5639,
+  "production": 0.5715,
   "done": {
     "seq_5seed": {
       "score": 0.5648786071269493,
       "gain": 0.0009786071269493046,
       "won": false
     }
-  }
+  },
+  "note": "0.5715 是**學習式融合**下的分數。gate 已對齊 predict.py，兩邊同一把尺。"
 }
