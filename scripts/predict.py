@@ -264,6 +264,12 @@ def main() -> int:
                          "伺服器把你配對給實力相近的人，對手的表現反映配對分級，"
                          "而分級反映你的穩定實力。實測 +0.0491±0.0232（6/6 勝，t=5.19）。"
                          "⚠️ 給了這個就會在測試集上多抽一次特徵，時間加倍")
+    ap.add_argument("--calib-prior", default="natural",
+                    choices=["natural", "uniform", "p100"],
+                    help="切點校準時假設的測試集等級先驗。natural = 校準集自身的分布"
+                         "（預設，維持現況）。官方測試集是 400 位玩家各一題，"
+                         "其等級分布未知；實測不同假設之間最壞情況差 0.010"
+                         "（RESULTS.md §2.7）。11/04 公開測試集釋出後再定案")
     ap.add_argument("--stacker", type=float, default=1.0,
                     help="學習式融合的正則化強度 C（0 = 關閉，退回固定權重）。"
                          "固定權重融合 0.5639 → stacker 0.5727"
@@ -384,11 +390,17 @@ def main() -> int:
     if args.decode == "threshold":
         from aicup.data import make_player_split as _mps
         from aicup.benchmark import build_rank_questions as _brq
+        from aicup.benchmark import rank_prior as _rank_prior
+        from aicup.benchmark import resample_to_prior as _resample_to_prior
         from aicup.featstore import open_stores
         _X, _ok = open_stores(["cache/features.npy"] + list(args.extra_features))
         _meta = load_metadata()
         _sp = _mps(_meta, val_frac=0.20, seed=42)
         _q = _brq(_meta, _sp, n_per_player=3, seed=0)
+        # 校準題目的等級分布決定了切點的位置。預設 natural（校準集自身的分布）。
+        # 若 11/04 拿到公開測試集後判定官方的分布更接近平衡，改這個旗標即可，
+        # 不必動程式碼——實測固定先驗之間最壞情況差 0.010（RESULTS.md §2.7）。
+        _prior = _rank_prior(args.calib_prior, _meta)
         if rank_mlp:
             nets, rsc, rdev, qpost = rank_mlp
             _P = _Pg = qpost(nets, rsc, _X, _ok, _q.game_rows, rdev)
@@ -423,18 +435,23 @@ def main() -> int:
             _lo = _blp(_lo, _ls, w=args.seq_weight)   # 固定權重路徑只用第一個變體
 
         _sizes = np.array([max(int(_ok[r].sum()), 1) for r in _q.game_rows])
+        _ci = _resample_to_prior(np.arange(len(_q.true_rank_id)), _q.true_rank_id,
+                                 _prior, np.random.default_rng(42))
+        if _prior is not None:
+            print(f"  校準集已重抽成 {args.calib_prior} 先驗（{len(_ci)} 題）", flush=True)
         stacker = None
         if args.stacker > 0 and len(_parts) > 1:
             from aicup.stacker import Stacker, stack_features
             _F = stack_features(_parts, _sizes)
-            stacker = Stacker(C=args.stacker).fit(_F, _q.true_rank_id, parts=_parts)
+            stacker = Stacker(C=args.stacker).fit(_F[_ci], _q.true_rank_id[_ci],
+                                                  parts=_parts)
             _ev, _T = stacker.expected_level(_F), None
             print(f"  學習式融合已擬合（{_F.shape[1]} 維特徵，C={args.stacker}）"
                   f"——取代固定權重", flush=True)
         else:
-            _T = fit_temperature(_lo, _q.true_rank_id)
+            _T = fit_temperature(_lo[_ci], _q.true_rank_id[_ci])
             _ev = expected_level(apply_temperature(_lo, _T))
-        _th = optimise_thresholds(_ev, _q.true_rank_id)
+        _th = optimise_thresholds(_ev[_ci], _q.true_rank_id[_ci])
         calib = (_T, _th, stacker)
         print(f"  切點校準完成（{len(_q.true_rank_id)} 題）："
               f"{'T=%.2f, ' % _T if _T is not None else ''}"

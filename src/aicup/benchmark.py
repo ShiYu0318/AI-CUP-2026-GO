@@ -240,3 +240,41 @@ def pool_summary(pool: PlayerPool) -> pd.DataFrame:
             "query_games_mean": float(np.mean([len(pool.query_rows[p]) for p in pids])),
         })
     return pd.DataFrame(rows)
+
+def rank_prior(name: str, meta, n_levels: int = None) -> np.ndarray | None:
+    """回傳一個目標等級先驗。`"natural"` 回傳 None（代表「照資料本來的分布」）。
+
+    `"p100"` 是訓練資料中**至少有 100 譜**的玩家的等級分布。之所以特別看這個，
+    是因為官方競賽一的候選庫要求「400 人**各 100 譜**」，測試玩家必然出自
+    譜數足夠的那一群；而那一群的分布（7.4%~12.3%）比全體玩家
+    （5.4%~19.8%）平均得多。詳見 RESULTS.md §2.7。
+    """
+    n = len(LEVELS) if n_levels is None else n_levels
+    if name == "natural":
+        return None
+    if name == "uniform":
+        return np.full(n, 1.0 / n)
+    if name == "p100":
+        cnt = meta.groupby("player_id").size()
+        rk = meta.groupby("player_id")["rank_id"].first()
+        p = np.bincount(rk[cnt >= 100].to_numpy(), minlength=n).astype(float)
+        return p / p.sum()
+    raise ValueError(f"未知的先驗 {name!r}，可用：natural / uniform / p100")
+
+
+def resample_to_prior(idx, y, prior, rng) -> np.ndarray:
+    """把索引集重抽成目標先驗，**題數保持不變**。
+
+    以 w_i ∝ prior[y_i] / 目前頻率[y_i] 的機率有放回地抽。
+    題數保持不變是刻意的：取子集會讓最稀有的等級把整體題數壓到協定門檻以下
+    （自然分布下 rank 4 只佔 5.4%，取子集只剩約一半的題目）。
+    """
+    idx = np.asarray(idx)
+    if prior is None or len(idx) == 0:
+        return idx
+    y = np.asarray(y)
+    cnt = np.bincount(y[idx], minlength=len(prior)).astype(float)
+    w = np.where(cnt[y[idx]] > 0, np.asarray(prior)[y[idx]] / np.maximum(cnt[y[idx]], 1), 0.0)
+    if w.sum() <= 0:
+        return idx
+    return rng.choice(idx, size=len(idx), replace=True, p=w / w.sum())
