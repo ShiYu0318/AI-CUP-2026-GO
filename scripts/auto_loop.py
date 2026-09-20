@@ -78,68 +78,77 @@ BASELINE = 0.4631      # 官方 baseline（競賽二）
 #             排程器用它決定能同時跑幾個——26 GB 的機器上盲目平行會直接爆掉，
 #             而 swap 一旦發生，兩個工作都會慢十倍以上，比序列執行還糟。
 EXPERIMENTS = [
-    # ── 2026-09-21 方法調整 ────────────────────────────────────────────────
-    # 第一批五個實驗（加 seed / 加資料 / 加容量 / 加視窗）全部落在 +0.001~0.005，
-    # 沒有一個通過門檻。這不是巧合，是**放大既有東西的天花板**。
-    # 但把三個「個別不夠」的變體**集成**後拿到 +0.0079（8/8，t=9.15）。
+    # ── 2026-09-21 第三輪：**換資訊、換模型類別**，不再換大小 ──────────────
+    # 前兩輪已經把「放大既有東西」測死了：
+    #   加 seed +0.0010 / 加資料 +0.0041 / 加寬 +0.0049 / 加視窗 −0.0009 / 加 MLP 寬度 −0.0031
+    # 但三個「個別不夠」的變體集成起來 +0.0079（8/8，t=9.15）。
+    # 結論：集成要的是**分歧**。所以這一輪每一項都改動「資訊」或「歸納偏置」，
+    # 不改容量。
     #
-    # 所以佇列改成兩類：
-    #   (a) 製造**誤差來源不同**的新變體，餵給集成
-    #   (b) 修掉第一批裡設計錯的實驗
-    # 不再排「同一個模型調大一點」這種實驗。
+    # 另外兩個已經證偽、不要再排的方向：
+    #   · 「尾盤沒被看到」——max_moves 數的是我方的手，只有 1.46% 的棋局被截斷
+    #   · EM 自適應先驗估計——序數任務的混淆矩陣近奇異，每一格都輸給固定先驗
     {
-        "name": "seq_240_fair",
-        "device": "mps",
-        "mem_gb": 6.5,
-        "why": "重做 240 手實驗。第一次用 30 萬局、對照組 40 萬局，"
-               "**少了 25% 的資料**，所以 −0.0055 混淆了『視窗變長』與『資料變少』。"
-               "這次用相同的 40 萬局，只變動視窗長度",
-        "train": ["python3", "scripts/train_rank_seq.py",
-                  "--sequences", "cache/sequences240.npy",
-                  "--extra-sequences", "cache/sequences240_opp.npy",
-                  "--seeds", "3", "--steps", "12000", "--train-games", "400000",
-                  "--out", "cache/rank_seq240_fair"],
-        "produces": "cache/rank_seq240_fair/models.pt",
-        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
-                 "--json-out", "artifacts/blend_seq240fair.json"],
-        "eval_env": {"AICUP_SEQ": "cache/rank_seq240_fair/models.pt",
-                     "AICUP_SEQ_STORES": "cache/sequences240.npy,cache/sequences240_opp.npy"},
-        "json": "artifacts/blend_seq240fair.json",
-    },
-    {
-        "name": "seq_narrow_deep",
-        "device": "mps",
-        "mem_gb": 6.5,
-        "why": "**製造誤差來源不同的變體**：窄而深（width 96、dilation 到 16）"
-               "而不是寬而淺。集成要的是分歧，不是每個成分都更強——"
-               "w192 已經證明『更寬』有用，這裡測『更深』是不是另一個方向",
+        "name": "seq_gru",
+        "device": "cpu",
+        "mem_gb": 5.0,
+        "why": "**換 encoder 類別**：雙向 GRU 取代 dilated CNN。目前三個集成成員"
+               "都是同一個 CNN，只差寬度與資料量，分歧其實很小卻已值 +0.0079。"
+               "遞迴狀態是真正不同的歸納偏置。"
+               "實測 GRU 在 CPU 上 246 ms/step、MPS 上 343 ms——與卷積**相反**，"
+               "所以它能跟 MPS 上的 CNN 真正並行",
         "train": ["python3", "scripts/train_rank_seq.py",
                   "--extra-sequences", "cache/sequences_opp.npy",
-                  "--seeds", "3", "--steps", "14000", "--train-games", "400000",
-                  "--width", "96", "--out", "cache/rank_seq_narrow"],
-        "produces": "cache/rank_seq_narrow/models.pt",
+                  "--arch", "gru", "--seeds", "3", "--steps", "12000",
+                  "--train-games", "400000", "--device", "cpu",
+                  "--out", "cache/rank_seq_gru"],
+        "produces": "cache/rank_seq_gru/models.pt",
         "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
-                 "--json-out", "artifacts/blend_seqnarrow.json"],
-        "eval_env": {"AICUP_SEQ": "cache/rank_seq_narrow/models.pt"},
-        "json": "artifacts/blend_seqnarrow.json",
+                 "--json-out", "artifacts/blend_seqgru.json"],
+        "eval_env": {"AICUP_SEQ": "cache/rank_seq_gru/models.pt"},
+        "json": "artifacts/blend_seqgru.json",
     },
     {
-        "name": "mlp_wider",
-        "device": "cpu",
-        "mem_gb": 5.5,
-        "why": "單局 MLP 的 hidden 1024 → 1536。加 seed 已證實無效（+0.0010），"
-               "但**容量**這個方向在序列模型上有效（w192 +0.0061），值得在 MLP 上試一次。"
-               "走 CPU，與序列訓練真正並行",
-        "train": ["python3", "scripts/train_rank_mlp.py",
-                  "--extra-features", "cache/features_opp.npy",
-                  "--seeds", "3", "--steps", "20000", "--hidden", "1536",
-                  "--train-games", "0", "--device", "cpu",
-                  "--out", "cache/rank_mlp_w1536"],
-        "produces": "cache/rank_mlp_w1536/models.pt",
+        "name": "seq_shape",
+        "device": "mps",
+        "mem_gb": 10.0,
+        "why": "**換資訊**：加上逐手棋形（接／尖／跳／飛／象步、貼／尖沖、愚形、厚度）。"
+               "現有 12 維只有鄰居的**數量**，沒有**排列**——而 尖(1,1) 與 跳(0,2) "
+               "的曼哈頓距離都是 2，兩種完全不同的手在特徵上是同一個數字。"
+               "愚形率 0.1325 與 features.py 既有的整局愚形率 0.13 吻合（交叉驗證）",
+        "train": ["python3", "scripts/train_rank_seq.py",
+                  "--extra-sequences", "cache/sequences_opp.npy",
+                  "cache/seqshape.npy", "cache/seqshape_opp.npy",
+                  "--seeds", "3", "--steps", "12000", "--train-games", "400000",
+                  "--out", "cache/rank_seq_shape"],
+        "produces": "cache/rank_seq_shape/models.pt",
         "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
-                 "--json-out", "artifacts/blend_mlpw1536.json"],
-        "eval_env": {"AICUP_GAME": "cache/rank_mlp_w1536/models.pt"},
-        "json": "artifacts/blend_mlpw1536.json",
+                 "--json-out", "artifacts/blend_seqshape.json"],
+        "eval_env": {"AICUP_SEQ": "cache/rank_seq_shape/models.pt",
+                     "AICUP_SEQ_STORES": "cache/sequences.npy,cache/sequences_opp.npy,"
+                                         "cache/seqshape.npy,cache/seqshape_opp.npy"},
+        "json": "artifacts/blend_seqshape.json",
+    },
+    {
+        "name": "seq_gru_shape",
+        "device": "cpu",
+        "mem_gb": 8.0,
+        "why": "兩個新方向疊起來：GRU 讀棋形序列。若 seq_gru 與 seq_shape 各自"
+               "帶來的分歧來自不同地方，這一個應該與兩者都不一樣——"
+               "集成成員之間**兩兩都不像**才是最理想的",
+        "train": ["python3", "scripts/train_rank_seq.py",
+                  "--extra-sequences", "cache/sequences_opp.npy",
+                  "cache/seqshape.npy", "cache/seqshape_opp.npy",
+                  "--arch", "gru", "--seeds", "3", "--steps", "12000",
+                  "--train-games", "400000", "--device", "cpu",
+                  "--out", "cache/rank_seq_gru_shape"],
+        "produces": "cache/rank_seq_gru_shape/models.pt",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+                 "--json-out", "artifacts/blend_seqgrushape.json"],
+        "eval_env": {"AICUP_SEQ": "cache/rank_seq_gru_shape/models.pt",
+                     "AICUP_SEQ_STORES": "cache/sequences.npy,cache/sequences_opp.npy,"
+                                         "cache/seqshape.npy,cache/seqshape_opp.npy"},
+        "json": "artifacts/blend_seqgrushape.json",
     },
 ]
 
