@@ -6,6 +6,14 @@
 
 ## 設計上的三個刻意選擇
 
+**0. Gate 問的是「加進現有集成有沒有幫助」，不是「單獨比 base 好不好」。**
+實測 `seq_full`（+0.0053）與 `seq_w192`（+0.0061）各自都沒過 0.005 門檻，
+但兩個加上 base 組成三變體集成後是 **+0.0079（8/8，t=9.15）**。
+用「單獨比較」當 gate 會**系統性地拒絕好的集成成員**——
+集成要的是分歧，不是每個成分都更強。
+所以 `eval_blend.py` 的預設就是上線中的整個集成，
+候選模型以 `AICUP_SEQ` 附加在後面，成為額外的一個 stacker 成分。
+
 **1. Gate 用的是 RESULTS.md〇章的協定，不是訓練腳本自己報的分數。**
 訓練腳本內建的評估是同集校準（樂觀）。這裡一律走 `scripts/eval_blend.py`：
 8 組 player-disjoint、校準與評分玩家不重疊、DP 切點。
@@ -16,6 +24,8 @@
 下一個實驗會拿 stacker 分數（約 0.5715）去比 0.5639，**假性通過 +0.008**，
 而那 0.008 只是換了評分標準，不是模型變好。
 **換 gate 的定義時，一定要同時重設 `production`。**
+這件事現在由 `GATE_VERSION` 強制執行：版本不符就把 production 作廢、
+重新量一次。文件擋不住這種錯，機制可以。
 
 **2. FLOOR：改進小於門檻就不算贏。**
 本專案的 seed 間標準差約 ±0.010，所以低於 FLOOR 的「增益」多半是雜訊。
@@ -61,6 +71,16 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE = "artifacts/auto_loop_state.json"
 LEDGER = "RESULTS.md"
 FLOOR = 0.005          # 小於這個增益不算贏（seed 間標準差約 ±0.010）
+
+# gate 的「尺」的版本。**改動 gate 的定義時一定要 +1。**
+# 這不是裝飾：state 裡的 production 是用舊尺量的，換尺卻沿用舊數字，
+# 下一個實驗就會拿新尺的分數去比舊尺的基準，**假性通過**。
+# 真實踩過一次（見下方模組說明）。版本不符時會強制重新量一次基準，
+# 讓這個錯誤在機制上不可能發生，而不是靠人記得。
+#   1  固定權重融合
+#   2  學習式融合（stacker）取代固定權重
+#   3  gate 改為「候選 + 現有三變體集成」——單獨比 base 會系統性拒絕好的集成成員
+GATE_VERSION = 3
 BASELINE = 0.4631      # 官方 baseline（競賽二）
 
 
@@ -88,26 +108,9 @@ EXPERIMENTS = [
     # 另外兩個已經證偽、不要再排的方向：
     #   · 「尾盤沒被看到」——max_moves 數的是我方的手，只有 1.46% 的棋局被截斷
     #   · EM 自適應先驗估計——序數任務的混淆矩陣近奇異，每一格都輸給固定先驗
-    {
-        "name": "seq_gru",
-        "device": "cpu",
-        "mem_gb": 5.0,
-        "why": "**換 encoder 類別**：雙向 GRU 取代 dilated CNN。目前三個集成成員"
-               "都是同一個 CNN，只差寬度與資料量，分歧其實很小卻已值 +0.0079。"
-               "遞迴狀態是真正不同的歸納偏置。"
-               "實測 GRU 在 CPU 上 246 ms/step、MPS 上 343 ms——與卷積**相反**，"
-               "所以它能跟 MPS 上的 CNN 真正並行",
-        "train": ["python3", "scripts/train_rank_seq.py",
-                  "--extra-sequences", "cache/sequences_opp.npy",
-                  "--arch", "gru", "--seeds", "3", "--steps", "12000",
-                  "--train-games", "400000", "--device", "cpu",
-                  "--out", "cache/rank_seq_gru"],
-        "produces": "cache/rank_seq_gru/models.pt",
-        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
-                 "--json-out", "artifacts/blend_seqgru.json"],
-        "eval_env": {"AICUP_SEQ": "cache/rank_seq_gru/models.pt"},
-        "json": "artifacts/blend_seqgru.json",
-    },
+    # 順序：MPS 的先跑（卷積在 MPS 上快 4 倍），CPU 的排後面與之並行。
+    # seq_gru 放最後是因為它此刻正在手動訓練中——
+    # 排前面的話 `produces` 還不存在，迴圈會重複訓練同一個模型。
     {
         "name": "seq_shape",
         "device": "mps",
@@ -168,6 +171,26 @@ EXPERIMENTS = [
                                          "cache/seqshape.npy,cache/seqshape_opp.npy"},
         "json": "artifacts/blend_seqgrushape.json",
     },
+    {
+        "name": "seq_gru",
+        "device": "cpu",
+        "mem_gb": 5.0,
+        "why": "**換 encoder 類別**：雙向 GRU 取代 dilated CNN。目前三個集成成員"
+               "都是同一個 CNN，只差寬度與資料量，分歧其實很小卻已值 +0.0079。"
+               "遞迴狀態是真正不同的歸納偏置。"
+               "實測 GRU 在 CPU 上 246 ms/step、MPS 上 343 ms——與卷積**相反**，"
+               "所以它能跟 MPS 上的 CNN 真正並行",
+        "train": ["python3", "scripts/train_rank_seq.py",
+                  "--extra-sequences", "cache/sequences_opp.npy",
+                  "--arch", "gru", "--seeds", "3", "--steps", "12000",
+                  "--train-games", "400000", "--device", "cpu",
+                  "--out", "cache/rank_seq_gru"],
+        "produces": "cache/rank_seq_gru/models.pt",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+                 "--json-out", "artifacts/blend_seqgru.json"],
+        "eval_env": {"AICUP_SEQ": "cache/rank_seq_gru/models.pt"},
+        "json": "artifacts/blend_seqgru.json",
+    },
 ]
 
 
@@ -178,8 +201,15 @@ def log(msg: str) -> None:
 def load_state() -> dict:
     if os.path.exists(STATE):
         with open(STATE) as f:
-            return json.load(f)
-    return {"production": None, "done": {}}
+            st = json.load(f)
+        if st.get("gate_version") != GATE_VERSION:
+            log(f"gate 版本 {st.get('gate_version')} → {GATE_VERSION}，"
+                f"舊的生產分數 {st.get('production')} 是用**舊的尺**量的，已作廢，"
+                f"將重新量一次基準")
+            st["production"] = None
+            st["gate_version"] = GATE_VERSION
+        return st
+    return {"production": None, "done": {}, "gate_version": GATE_VERSION}
 
 
 def save_state(st: dict) -> None:

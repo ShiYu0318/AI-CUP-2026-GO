@@ -54,7 +54,7 @@ from aicup.data import load_metadata, make_player_split          # noqa: E402
 from aicup.oofcache import OofCache                              # noqa: E402
 from aicup.scoring import (apply_thresholds, estimate_prior_em,    # noqa: E402
                            optimise_thresholds, rank_score)
-from eval_blend import (GAME, QUESTION, SEQ, Components,         # noqa: E402
+from eval_blend import (GAME, QUESTION, SEQ, SEQS, Components,   # noqa: E402
                         pick_device)
 
 N_LEVELS = 10
@@ -163,9 +163,12 @@ def main() -> int:
     for seed in range(args.seeds):
         q = build_rank_questions(meta, split, n_per_player=3, seed=seed)
         parts, y, pid = {}, None, None
-        for name, fn, paths in (("game", comp.game, [GAME]),
-                                ("question", comp.question, [QUESTION]),
-                                ("seq", comp.seq, [SEQ])):
+        comps = [("game", comp.game, [GAME]),
+                 ("question", comp.question, [QUESTION])]
+        for _ck, _st in zip(SEQ, SEQS):      # 每個序列變體各自成為一個成分
+            comps.append((f"seq_{os.path.basename(os.path.dirname(_ck))}",
+                          (lambda qq, c=_ck, t=_st: comp.seq(qq, c, t)), [_ck]))
+        for name, fn, paths in comps:
             tag = f"{name}__{os.path.basename(os.path.dirname(paths[0]))}"
             lo, y, pid = cache.get(tag, q, lambda f=fn, qq=q: f(qq), model_paths=paths)
             parts[name] = lo

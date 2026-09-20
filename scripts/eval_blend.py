@@ -50,11 +50,20 @@ from aicup.scoring import (apply_temperature, apply_thresholds,  # noqa: E402
 # ⚠️ 快取的 key 帶有 checkpoint 的**內容指紋**，所以換模型不會拿到舊後驗。
 GAME = os.environ.get("AICUP_GAME", "cache/rank_mlp_opp_big/models.pt")
 QUESTION = os.environ.get("AICUP_QUESTION", "cache/rank_question_opp/models.pt")
-SEQ = os.environ.get("AICUP_SEQ", "cache/rank_seq_opp/models.pt")
+# ⚠️ 預設**就是上線中的三變體集成**，不是單一模型。
+# 實測 seq_full（+0.0053）與 seq_w192（+0.0061）各自都沒過 0.005 門檻，
+# 合起來卻是 +0.0079（8/8，t=9.15）——用「單獨比 base 好不好」當 gate
+# 會系統性地拒絕好的集成成員。要問的是「**加進現有集成有沒有幫助**」。
+SEQ = [p for p in os.environ.get(
+    "AICUP_SEQ",
+    "cache/rank_seq_opp/models.pt,cache/rank_seq_opp_full/models.pt,"
+    "cache/rank_seq_w192/models.pt").split(",") if p]
 FEATS = ["cache/features.npy", "cache/features_opp.npy"]
-SEQS = os.environ.get(
+# 每個 checkpoint 一組序列庫，用 ";" 分隔；只給一組就套用到全部。
+_ss = [g.split(",") for g in os.environ.get(
     "AICUP_SEQ_STORES",
-    "cache/sequences.npy,cache/sequences_opp.npy").split(",")
+    "cache/sequences.npy,cache/sequences_opp.npy").split(";") if g]
+SEQS = _ss if len(_ss) == len(SEQ) else [_ss[0]] * len(SEQ)
 
 
 def pick_device():
@@ -109,22 +118,31 @@ class Components:
                           + 0.5 * pc / np.maximum(pc.sum(1, keepdims=True), 1e-12))
         return _log(np.mean(ps, axis=0))
 
-    def seq(self, q):
-        if "seq" not in self._loaded:
-            ck = torch.load(SEQ, map_location=self.dev, weights_only=False)
-            nfeat = 12 * (1 + len(ck["args"].get("extra_sequences", [])))
+    def seq(self, q, ckpt=None, stores=None):
+        """一個序列 checkpoint 的題目層級 log 後驗。
+
+        多變體時**每個 checkpoint 各自成為一個 stacker 成分**，不先平均——
+        先平均會把各變體的信心與熵抹平，而那正是 stacker 要用的訊號。
+        （與 `predict.py` 的做法一致。）
+        """
+        ckpt = ckpt or SEQ[0]
+        stores = stores or SEQS[0]
+        key = f"seq::{ckpt}"
+        if key not in self._loaded:
+            ck = torch.load(ckpt, map_location=self.dev, weights_only=False)
+            nfeat = sum(np.load(p, mmap_mode="r").shape[-1] for p in stores)
             nets = []
             for sd in ck["models"]:
                 n = self._SeqNet(nfeat, ck["args"])
                 n.load_state_dict(sd); n.eval().to(self.dev)
                 nets.append(n)
-            S = self._SeqStore([np.load(p, mmap_mode="r") for p in SEQS])
+            S = self._SeqStore([np.load(p, mmap_mode="r") for p in stores])
             ok = None
-            for p in SEQS:
+            for p in stores:
                 m = np.load(p.replace(".npy", "_ok.npy"))
                 ok = m if ok is None else (ok & m)
-            self._loaded["seq"] = (nets, S, ok)
-        nets, S, ok = self._loaded["seq"]
+            self._loaded[key] = (nets, S, ok)
+        nets, S, ok = self._loaded[key]
         used = np.unique(np.concatenate([r for r in q.game_rows]))
         lens = np.zeros(len(S), dtype=np.int64)
         lens[used] = (np.abs(np.asarray(S[used], dtype=np.float32)).sum(-1) > 0).sum(-1)
@@ -151,8 +169,11 @@ def score_blend(parts, weights, y, cal, sco, stacker_c=0.0, sizes=None):
         ev = Stacker(C=stacker_c).fit(F[cal], y[cal], parts=parts).expected_level(F)
     else:
         lo = parts["game"]
-        for name in ("question", "seq"):
-            w = weights.get(name, 0.0)
+        # 固定權重路徑只吃第一個序列變體（與 predict.py 的固定權重分支一致）；
+        # 多變體集成是 stacker 專屬的能力。
+        seq_keys = sorted(k for k in parts if k.startswith("seq"))
+        for name, w in (("question", weights.get("question", 0.0)),
+                        (seq_keys[0] if seq_keys else "seq", weights.get("seq", 0.0))):
             if w > 0 and name in parts:
                 lo = blend_log_posteriors(lo, parts[name], w=w)
         T = fit_temperature(lo[cal], y[cal])
@@ -178,7 +199,9 @@ def main() -> int:
 
     dev = pick_device()
     print(f"device = {dev}", flush=True)
-    print(f"  單局 {GAME}\n  題目 {QUESTION}\n  序列 {SEQ}", flush=True)
+    print(f"  單局 {GAME}\n  題目 {QUESTION}", flush=True)
+    for _p in SEQ:
+        print(f"  序列 {_p}", flush=True)
     comp = Components(dev)
     cache = OofCache(args.cache_dir)
     meta = load_metadata()
@@ -189,9 +212,13 @@ def main() -> int:
     for seed in range(args.seeds):
         q = build_rank_questions(meta, split, n_per_player=3, seed=seed)
         parts, y = {}, None
-        for name, fn, paths in (("game", comp.game, [GAME]),
-                                ("question", comp.question, [QUESTION]),
-                                ("seq", comp.seq, [SEQ])):
+        comps = [("game", comp.game, [GAME]),
+                 ("question", comp.question, [QUESTION])]
+        for _ck, _st in zip(SEQ, SEQS):
+            _tag = f"seq_{os.path.basename(os.path.dirname(_ck))}"
+            comps.append((_tag,
+                          (lambda qq, c=_ck, t=_st: comp.seq(qq, c, t)), [_ck]))
+        for name, fn, paths in comps:
             # tag 帶上 checkpoint 的目錄名，不同候選模型才不會共用同一個快取項。
             # （內容指紋本來就會擋掉錯誤命中，但分開存可以保留多個候選、互相比較。）
             tag = f"{name}__{os.path.basename(os.path.dirname(paths[0]))}"
