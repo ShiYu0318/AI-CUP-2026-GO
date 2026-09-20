@@ -4,3 +4,11 @@ device = mps
   訓練張量 6.02 GB（float16）
   seed 0 loss 2.1768 (43.2 分)
   seed 1 loss 2.1123 (45.0 分)
+  seed 2 loss 2.1224 (45.2 分)
+  題目 seed 0: 0.5613
+  題目 seed 1: 0.5614
+  題目 seed 2: 0.5474
+  題目 seed 3: 0.5675
+
+題目層級官方分數 0.5594 ±0.0085（官方 baseline 0.4631）
+已寫出 cache/rank_seq_opp_full/models.pt
