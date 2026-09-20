@@ -114,6 +114,56 @@ class SeqRankNet(nn.Module):
         return self.cls(z), self.orn(z)
 
 
+class SeqRankGRU(nn.Module):
+    """雙向 GRU 讀逐手序列——**刻意換一個歸納偏置**，不是為了更強。
+
+    集成的收益來自成分之間的分歧。目前三個集成成員（base / full / w192）
+    都是同一個 dilated CNN，只差寬度與資料量，分歧其實很小，
+    卻已經值 +0.0079（8/8，t=9.15）。換成遞迴狀態（無固定感受野、
+    對「累積到目前為止的棋風」天然敏感）應該產生更不一樣的錯誤。
+
+    pooling 刻意與 `SeqRankNet` **完全相同**（masked avg + max），
+    所以兩者的差別只有 encoder 一項——這樣比較才有解釋力。
+    """
+
+    def __init__(self, n_feat: int = N_MOVE_FEATURES, width: int = 128,
+                 n_levels: int = 10, dropout: float = 0.1, layers: int = 2):
+        super().__init__()
+        self.inp = nn.Sequential(nn.Linear(n_feat, width), nn.GELU())
+        self.rnn = nn.GRU(width, width // 2, num_layers=layers,
+                          batch_first=True, bidirectional=True,
+                          dropout=dropout if layers > 1 else 0.0)
+        self.head = nn.Sequential(nn.Linear(2 * width, 256), nn.GELU(),
+                                  nn.Dropout(dropout))
+        self.cls = nn.Linear(256, n_levels)
+        self.orn = nn.Linear(256, n_levels - 1)
+
+    def forward(self, x, mask):
+        h, _ = self.rnn(self.inp(x))          # (B, T, width)
+        h = h.transpose(1, 2)                 # 與 CNN 的 (B, C, T) 對齊
+        m = mask.unsqueeze(1).float()
+        h = h * m
+        avg = h.sum(-1) / m.sum(-1).clamp(min=1)
+        mx = (h + (m - 1) * 1e4).max(-1).values
+        z = self.head(torch.cat([avg, mx], dim=1))
+        return self.cls(z), self.orn(z)
+
+
+ARCHS = {"cnn": SeqRankNet, "gru": SeqRankGRU}
+
+
+def build_seq_net(n_feat: int, ck_args: dict):
+    """由 checkpoint 存下來的 args 重建網路。
+
+    `arch` 是後加的，舊 checkpoint 沒有這個鍵——預設 "cnn" 才不會
+    讓既有的三個集成成員載不起來。
+    """
+    arch = ck_args.get("arch", "cnn")
+    if arch not in ARCHS:
+        raise ValueError(f"未知的序列模型 arch={arch!r}，可用：{sorted(ARCHS)}")
+    return ARCHS[arch](n_feat=n_feat, width=ck_args["width"])
+
+
 def question_posteriors(nets, S, ok, lens, game_rows, device, batch: int = 256):
     """逐題：多局後驗做幾何平均（與 train_rank_mlp 的聚合方式一致）。
 
@@ -151,6 +201,10 @@ def main() -> int:
     ap.add_argument("--seeds", type=int, default=3)
     ap.add_argument("--steps", type=int, default=12000)
     ap.add_argument("--width", type=int, default=128)
+    ap.add_argument("--arch", default="cnn", choices=sorted(ARCHS),
+                    help="序列 encoder。cnn = dilated 1D 卷積（預設）；\n"
+                         "gru = 雙向 GRU。換 arch 是為了**製造集成分歧**，"
+                         "不是預期它單獨更強")
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--lr", type=float, default=2e-3)
     ap.add_argument("--train-games", type=int, default=400000,
@@ -206,7 +260,7 @@ def main() -> int:
     nets = []
     for sd in range(args.seeds):
         torch.manual_seed(sd)
-        net = SeqRankNet(n_feat=S.shape[-1], width=args.width).to(device)
+        net = build_seq_net(S.shape[-1], vars(args)).to(device)
         opt = torch.optim.AdamW(net.parameters(), lr=args.lr, weight_decay=1e-4)
         sch = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr,
                                                   total_steps=args.steps, pct_start=0.1)

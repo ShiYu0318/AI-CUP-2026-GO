@@ -72,10 +72,10 @@ class Components:
     def __init__(self, device):
         self.dev = device
         from train_rank_mlp import RankMLP, question_posteriors
-        from train_rank_seq import SeqRankNet, SeqStore
+        from train_rank_seq import SeqStore, build_seq_net
         from train_rank_seq import question_posteriors as seq_posteriors
         self._RankMLP, self._qp = RankMLP, question_posteriors
-        self._SeqNet, self._SeqStore, self._sp = SeqRankNet, SeqStore, seq_posteriors
+        self._SeqNet, self._SeqStore, self._sp = build_seq_net, SeqStore, seq_posteriors
         self.X, self.ok = open_stores(FEATS)
         self._loaded = {}
 
@@ -115,7 +115,7 @@ class Components:
             nfeat = 12 * (1 + len(ck["args"].get("extra_sequences", [])))
             nets = []
             for sd in ck["models"]:
-                n = self._SeqNet(n_feat=nfeat, width=ck["args"]["width"])
+                n = self._SeqNet(nfeat, ck["args"])
                 n.load_state_dict(sd); n.eval().to(self.dev)
                 nets.append(n)
             S = self._SeqStore([np.load(p, mmap_mode="r") for p in SEQS])

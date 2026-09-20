@@ -360,7 +360,7 @@ def main() -> int:
     if paths and args.seq_weight > 0:
         import torch
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        from train_rank_seq import SeqRankNet
+        from train_rank_seq import build_seq_net
         seq_dev = torch.device("cuda" if torch.cuda.is_available() else
                                "mps" if torch.backends.mps.is_available() else "cpu")
         for path in paths:
@@ -368,7 +368,7 @@ def main() -> int:
             nets = []
             _nfeat = 12 * (1 + len(sck["args"].get("extra_sequences", [])))
             for sd in sck["models"]:
-                n = SeqRankNet(n_feat=_nfeat, width=sck["args"]["width"])
+                n = build_seq_net(_nfeat, sck["args"])
                 n.load_state_dict(sd); n.eval().to(seq_dev)
                 nets.append(n)
             seq_models.append((os.path.basename(os.path.dirname(path)), nets))
