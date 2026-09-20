@@ -32,7 +32,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from aicup.data import load_metadata, make_player_split           # noqa: E402
 from aicup.benchmark import build_rank_questions                  # noqa: E402
-from aicup.losses import SoftLabelCrossEntropy, CornLoss, corn_to_proba  # noqa: E402
+from aicup.losses import (SoftLabelCrossEntropy, CornLoss,       # noqa: E402
+                          PairwiseRankLoss, corn_to_proba)
 from aicup.moveseq import MAX_MOVES, N_MOVE_FEATURES              # noqa: E402
 from aicup.scoring import (fit_temperature, apply_temperature,    # noqa: E402
                            expected_level, optimise_thresholds,
@@ -207,6 +208,10 @@ def main() -> int:
                          "不是預期它單獨更強")
     ap.add_argument("--batch", type=int, default=256)
     ap.add_argument("--lr", type=float, default=2e-3)
+    ap.add_argument("--rank-loss", type=float, default=0.0,
+                    help="成對排序損失的權重。實測切點已經到頂（oracle 只剩 +0.0172），"
+                         "分數幾乎全由期望等級的**排序**決定，"
+                         "但 CE 與 CORN 都是分類損失、不直接管順序")
     ap.add_argument("--train-games", type=int, default=400000,
                     help="抽多少局訓練（0 = 全部）。序列張量比特徵大，記憶體吃緊時調小")
     ap.add_argument("--sequences", default="cache/sequences.npy")
@@ -257,6 +262,7 @@ def main() -> int:
     print(f"  訓練張量 {Xt.nbytes / 1e9:.2f} GB（float16）", flush=True)
 
     soft, corn = SoftLabelCrossEntropy(10, decay=1.0), CornLoss(10)
+    prank = PairwiseRankLoss(10).to(device) if args.rank_loss > 0 else None
     nets = []
     for sd in range(args.seeds):
         torch.manual_seed(sd)
@@ -270,6 +276,8 @@ def main() -> int:
             lc, lo = net(Xt[i].to(device).float(), Mt[i].to(device))
             yb = ytr[i].to(device)
             loss = soft(lc, yb) + 0.5 * corn(lo, yb)
+            if prank is not None:
+                loss = loss + args.rank_loss * prank(lc, yb)
             opt.zero_grad(set_to_none=True); loss.backward()
             nn.utils.clip_grad_norm_(net.parameters(), 5.0)
             opt.step(); sch.step()

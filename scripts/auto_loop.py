@@ -130,6 +130,24 @@ EXPERIMENTS = [
         "json": "artifacts/blend_seqshape.json",
     },
     {
+        "name": "seq_rankloss",
+        "device": "mps",
+        "mem_gb": 6.5,
+        "why": "**換損失**：加上成對排序損失。診斷顯示切點已到頂"
+               "（oracle 切點只剩 +0.0172），分數幾乎全由期望等級的排序決定"
+               "（Spearman 0.9037），但 CE 與 CORN 都是分類損失、不直接管順序。"
+               "這是唯一一個直接對著瓶頸下手的實驗",
+        "train": ["python3", "scripts/train_rank_seq.py",
+                  "--extra-sequences", "cache/sequences_opp.npy",
+                  "--rank-loss", "0.3", "--seeds", "3", "--steps", "12000",
+                  "--train-games", "400000", "--out", "cache/rank_seq_rankloss"],
+        "produces": "cache/rank_seq_rankloss/models.pt",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+                 "--json-out", "artifacts/blend_seqrankloss.json"],
+        "eval_env": {"AICUP_SEQ": "cache/rank_seq_rankloss/models.pt"},
+        "json": "artifacts/blend_seqrankloss.json",
+    },
+    {
         "name": "seq_gru_shape",
         "device": "cpu",
         "mem_gb": 8.0,

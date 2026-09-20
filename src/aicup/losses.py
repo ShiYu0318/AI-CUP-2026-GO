@@ -154,3 +154,37 @@ def batch_hard_triplet_loss(embeddings: torch.Tensor, labels: torch.Tensor,
     if not valid.any():
         return dist.new_zeros(())
     return F.relu(pos[valid] - neg[valid] + margin).mean()
+
+class PairwiseRankLoss(nn.Module):
+    """RankNet 式的成對排序損失：**直接優化順序**。
+
+    為什麼需要它：官方分數 = 完全正確 + e^-1 × 相鄰。實測把期望等級軸上的
+    切點換成 oracle（直接在評分集擬合）只能再拿 +0.0172，
+    而排序若完美可以拿到 0.9962——也就是說
+    **分數幾乎全部由「期望等級對真實等級的排序」決定**（Spearman 現為 0.9037，
+    見 RESULTS.md §2.10）。
+
+    但現行損失（soft-label CE ＋ CORN）都是**分類**損失：
+    它們在乎「這題是不是 4 級」，不在乎「這題該排在那題前面」。
+    這裡補上直接的排序項——對批次內每一組真實等級不同的配對 (i, j)，
+    要求期望等級的差與真實等級的差同號。
+
+    margin 用真實等級差來縮放：差 3 級的配對，期望等級也該差得更開。
+    只有差 1 級的配對才是最難的，給它們的 margin 最小。
+    """
+
+    def __init__(self, n_classes: int, margin_scale: float = 0.5):
+        super().__init__()
+        self.register_buffer("levels", torch.arange(n_classes, dtype=torch.float32))
+        self.margin_scale = float(margin_scale)
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        ev = (torch.softmax(logits, dim=-1) * self.levels).sum(-1)
+        dy = targets[:, None].float() - targets[None, :].float()
+        mask = dy > 0                                   # 只取 y_i > y_j 的配對
+        if not mask.any():
+            return logits.sum() * 0.0
+        de = ev[:, None] - ev[None, :]
+        margin = self.margin_scale * dy
+        # softplus(margin - de)：期望等級的差沒拉到 margin 就有損失
+        return nn.functional.softplus(margin[mask] - de[mask]).mean()

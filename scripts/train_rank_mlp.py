@@ -30,7 +30,8 @@ from aicup.data import load_metadata, make_player_split          # noqa: E402
 from aicup.featstore import open_stores          # noqa: E402
 from aicup.benchmark import build_rank_questions                 # noqa: E402
 from aicup.feature_metric import FeatureScaler                   # noqa: E402
-from aicup.losses import SoftLabelCrossEntropy, CornLoss, corn_to_proba  # noqa: E402
+from aicup.losses import (SoftLabelCrossEntropy, CornLoss,       # noqa: E402
+                          PairwiseRankLoss, corn_to_proba)
 from aicup.scoring import (rank_final_score, apply_temperature,  # noqa: E402
                            fit_temperature, optimise_thresholds,
                            apply_thresholds, expected_level, decode_expected_score)
@@ -105,6 +106,8 @@ def main() -> int:
     ap.add_argument("--hidden", type=int, default=768)
     ap.add_argument("--batch", type=int, default=2048)
     ap.add_argument("--lr", type=float, default=2e-3)
+    ap.add_argument("--rank-loss", type=float, default=0.0,
+                    help="成對排序損失的權重（見 aicup.losses.PairwiseRankLoss）")
     ap.add_argument("--train-games", type=int, default=300000,
                     help="抽多少局訓練（0 = 全部）")
     ap.add_argument("--corn-weight", type=float, default=0.5)
@@ -138,6 +141,8 @@ def main() -> int:
     print(f"訓練局數 {len(tr):,}，特徵 {Xraw.shape[1]} 維", flush=True)
 
     soft = SoftLabelCrossEntropy(10, decay=1.0)
+
+    prank = PairwiseRankLoss(10).to(device) if args.rank_loss > 0 else None
     corn = CornLoss(10)
     nets = []
     for sd in range(args.seeds):
@@ -153,6 +158,8 @@ def main() -> int:
             lc, lo = net(Xt[i].to(device))
             yb = yt[i].to(device)
             loss = soft(lc, yb) + args.corn_weight * corn(lo, yb)
+            if prank is not None:
+                loss = loss + args.rank_loss * prank(lc, yb)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             nn.utils.clip_grad_norm_(net.parameters(), 5.0)
