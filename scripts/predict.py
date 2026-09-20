@@ -154,6 +154,28 @@ def _question_posteriors_from_features(rank_question, Xq):
     return np.mean(ps, axis=0)
 
 
+def _question_log_posteriors(rank_question, X, ok, game_rows):
+    """只回傳**題目層級成分**的 log 後驗（不融合）。stacker 需要個別成分。"""
+    _, _, _, build_q, _ = rank_question
+    Xq = build_q(X, ok, game_rows)
+    return np.log(np.clip(_question_posteriors_from_features(rank_question, Xq),
+                          1e-12, None))
+
+
+def _question_log_posteriors_from_feats(rank_question, feats):
+    """同上，但吃已抽好的逐題特徵（推論路徑用）。"""
+    from aicup.question_model import aggregate_question
+    dim, rows = None, []
+    for A in feats:
+        v = aggregate_question(np.asarray(A)) if len(A) else None
+        rows.append(v)
+        if v is not None and dim is None:
+            dim = len(v)
+    Xq = np.stack([v if v is not None else np.zeros(dim, np.float32) for v in rows])
+    return np.log(np.clip(_question_posteriors_from_features(rank_question, Xq),
+                          1e-12, None))
+
+
 def _blend_question(rank_question, X, ok, game_rows, log_game):
     """從 feature store 取聚合特徵後融合。"""
     _, _, w, build_q, blend = rank_question
@@ -242,6 +264,11 @@ def main() -> int:
                          "伺服器把你配對給實力相近的人，對手的表現反映配對分級，"
                          "而分級反映你的穩定實力。實測 +0.0491±0.0232（6/6 勝，t=5.19）。"
                          "⚠️ 給了這個就會在測試集上多抽一次特徵，時間加倍")
+    ap.add_argument("--stacker", type=float, default=1.0,
+                    help="學習式融合的正則化強度 C（0 = 關閉，退回固定權重）。"
+                         "固定權重融合 0.5639 → stacker 0.5727"
+                         "（+0.0088，8/8 勝，t=5.00）。C 從 0.3 到 3.0 是平台。"
+                         "stacker 在**校準題目**上現場擬合，套用到測試集")
     ap.add_argument("--rank-seq", default="cache/rank_seq_opp/models.pt",
                     help="競賽二的逐手序列模型（dilated 1D-CNN）。"
                          "589 維是整局的統計摘要，看不到『愚形出現在第 30 手還是第 150 手』。"
@@ -347,13 +374,17 @@ def main() -> int:
         _q = _brq(_meta, _sp, n_per_player=3, seed=0)
         if rank_mlp:
             nets, rsc, rdev, qpost = rank_mlp
-            _P = qpost(nets, rsc, _X, _ok, _q.game_rows, rdev)
+            _P = _Pg = qpost(nets, rsc, _X, _ok, _q.game_rows, rdev)
             if rank_question:
                 _P = np.exp(_blend_question(rank_question, _X, _ok,
                                             _q.game_rows, np.log(np.clip(_P, 1e-12, None))))
         else:
-            _P = model.question_proba(
+            _P = _Pg = model.question_proba(
                 [np.asarray(_X[r[_ok[r]]]) for r in _q.game_rows], args.aggregation)
+        _parts = {"game": np.log(np.clip(_Pg, 1e-12, None))}
+        if rank_question:
+            _parts["question"] = _question_log_posteriors(rank_question, _X, _ok,
+                                                          _q.game_rows)
         _lo = np.log(np.clip(_P, 1e-12, None))
         if seq_nets is not None:
             from aicup.moveseq import MAX_MOVES as _MM
@@ -370,12 +401,25 @@ def main() -> int:
                                  1e-12, None))
             from aicup.question_model import blend_log_posteriors as _blp
             _lo = _blp(_lo, _ls, w=args.seq_weight)
-        _T = fit_temperature(_lo, _q.true_rank_id)
-        _th = optimise_thresholds(
-            expected_level(apply_temperature(_lo, _T)), _q.true_rank_id)
-        calib = (_T, _th)
+            _parts["seq"] = _ls
+
+        _sizes = np.array([max(int(_ok[r].sum()), 1) for r in _q.game_rows])
+        stacker = None
+        if args.stacker > 0 and len(_parts) > 1:
+            from aicup.stacker import Stacker, stack_features
+            _F = stack_features(_parts, _sizes)
+            stacker = Stacker(C=args.stacker).fit(_F, _q.true_rank_id, parts=_parts)
+            _ev, _T = stacker.expected_level(_F), None
+            print(f"  學習式融合已擬合（{_F.shape[1]} 維特徵，C={args.stacker}）"
+                  f"——取代固定權重", flush=True)
+        else:
+            _T = fit_temperature(_lo, _q.true_rank_id)
+            _ev = expected_level(apply_temperature(_lo, _T))
+        _th = optimise_thresholds(_ev, _q.true_rank_id)
+        calib = (_T, _th, stacker)
         print(f"  切點校準完成（{len(_q.true_rank_id)} 題）："
-              f"T={_T:.2f}, 切點={np.round(_th, 2).tolist()}", flush=True)
+              f"{'T=%.2f, ' % _T if _T is not None else ''}"
+              f"切點={np.round(_th, 2).tolist()}", flush=True)
 
     qids, preds, truth = [], [], []
     for tag in ("public", "private"):
@@ -406,11 +450,15 @@ def main() -> int:
                     g = np.exp(np.log(np.clip(p, 1e-12, None)).mean(axis=0))
                     P.append(g / g.sum())
             P = np.stack(P)
+            parts = {"game": np.log(np.clip(P, 1e-12, None))}
             if rank_question:
+                parts["question"] = _question_log_posteriors_from_feats(
+                    rank_question, feats)
                 P = np.exp(_blend_question_from_feats(
                     rank_question, feats, np.log(np.clip(P, 1e-12, None))))
         else:
             P = model.question_proba(feats, how=args.aggregation)
+            parts = {"game": np.log(np.clip(P, 1e-12, None))}
         lo = np.log(np.clip(P, 1e-12, None))
         if seq_nets is not None:
             from aicup.question_model import blend_log_posteriors as _blp
@@ -418,9 +466,17 @@ def main() -> int:
             ls = np.log(np.clip(
                 _seq_posteriors_from_blocks(seq_nets, blocks, seq_dev), 1e-12, None))
             lo = _blp(lo, ls, w=args.seq_weight)
+            parts["seq"] = ls
         if args.decode == "threshold":
-            T, th = calib
-            pred = apply_thresholds(expected_level(apply_temperature(lo, T)), th)
+            T, th, stacker = calib
+            if stacker is not None:
+                from aicup.stacker import stack_features
+                stacker.check_parts(parts)      # 成分集合必須與校準時一致
+                sizes = np.array([max(len(f), 1) for f in feats])
+                ev = stacker.expected_level(stack_features(parts, sizes))
+            else:
+                ev = expected_level(apply_temperature(lo, T))
+            pred = apply_thresholds(ev, th)
         elif args.decode == "expected":
             pred = decode_expected_score(apply_temperature(lo, args.temperature))
         else:
