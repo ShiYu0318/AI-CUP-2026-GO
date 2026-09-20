@@ -56,9 +56,13 @@ BASELINE = 0.4631      # 官方 baseline（競賽二）
 #   produces  訓練會產出的檔案；已存在就跳過訓練
 #   eval      評估指令，必須輸出 --json-out 指定的 json
 #   json      評估結果的 json 路徑
+#   mem_gb    訓練時的常駐記憶體估計（訓練張量 + 模型 + 工作空間）。
+#             排程器用它決定能同時跑幾個——26 GB 的機器上盲目平行會直接爆掉，
+#             而 swap 一旦發生，兩個工作都會慢十倍以上，比序列執行還糟。
 EXPERIMENTS = [
     {
         "name": "seq_5seed",
+        "mem_gb": 6.5,
         "why": "序列模型目前只有 3 個 seed。加到 5 個純粹降變異，"
                "是最便宜的增益，也能檢驗現有 0.5639 有多少是 seed 運氣",
         "train": ["python3", "scripts/train_rank_seq.py",
@@ -73,6 +77,7 @@ EXPERIMENTS = [
     },
     {
         "name": "seq_full_data",
+        "mem_gb": 7.5,
         "why": "序列模型只訓練 40 萬局，單局 MLP 是 78 萬局。"
                "序列模型自己就比整條手工特徵管線強，值得餵滿",
         "train": ["python3", "scripts/train_rank_seq.py",
@@ -87,6 +92,7 @@ EXPERIMENTS = [
     },
     {
         "name": "seq_240moves",
+        "mem_gb": 5.0,
         "why": "序列只看前 160 手，但棋局手數中位數是 222——**平均丟掉 25%，"
                "而且只有 16.7% 的棋局被完整涵蓋**。丟掉的還是尾盤，"
                "而官子填空、終局打吃正是最強的棋力訊號所在。240 手可涵蓋 96%",
@@ -104,6 +110,7 @@ EXPERIMENTS = [
     },
     {
         "name": "seq_wider",
+        "mem_gb": 4.5,
         "why": "序列模型 width=128。加寬到 192 測容量是否還是瓶頸——"
                "若無增益，代表瓶頸在每手 24 維的特徵，而不在模型",
         "train": ["python3", "scripts/train_rank_seq.py",
@@ -144,6 +151,22 @@ def run(cmd, env_extra=None, timeout=None) -> tuple[int, str]:
     return p.returncode, (p.stdout or "") + (p.stderr or "")
 
 
+def total_memory_gb() -> float:
+    try:
+        return int(subprocess.run(["sysctl", "-n", "hw.memsize"],
+                                  capture_output=True, text=True).stdout) / 1e9
+    except Exception:
+        return 16.0
+
+
+def spawn(cmd, log_path, env_extra=None):
+    env = os.environ.copy()
+    env.update(env_extra or {})
+    fh = open(log_path, "w")
+    return subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=fh,
+                            stderr=subprocess.STDOUT), fh
+
+
 def record(exp: dict, score: float, prod: float, verdict: str, detail: str) -> None:
     """把結果寫進 RESULTS.md 的無效方法表或主線表——**成功失敗都要記**。"""
     line = (f"| {datetime.now():%m-%d} | **{exp['name']}** | {score:.4f} | "
@@ -178,6 +201,13 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--floor", type=float, default=FLOOR)
     ap.add_argument("--only", nargs="*", default=None, help="只跑指定的實驗名稱")
+    ap.add_argument("--jobs", type=int, default=1,
+                    help="同時訓練幾個實驗。排程器會依各實驗宣告的 mem_gb "
+                         "與機器實體記憶體決定實際併發數——"
+                         "⚠️ MPS 只有一張 GPU，平行主要是填滿資料載入與 CPU 階段的空檔，"
+                         "不會線性加速；而記憶體超賣導致 swap 會讓所有工作慢十倍以上")
+    ap.add_argument("--mem-budget", type=float, default=None,
+                    help="可用於訓練的記憶體上限（GB）。預設取實體記憶體的 65%%")
     args = ap.parse_args()
 
     st = load_state()
@@ -204,47 +234,84 @@ def main() -> int:
         save_state(st)
         log(f"生產分數 = {st['production']:.4f}")
 
-    for exp in queue:
-        log("=" * 62)
-        log(f"實驗 {exp['name']}：{exp['why']}")
+    budget = args.mem_budget or total_memory_gb() * 0.65
+    log(f"記憶體預算 {budget:.1f} GB（實體 {total_memory_gb():.0f} GB），"
+        f"最多同時訓練 {args.jobs} 個")
 
-        if exp.get("train") and not os.path.exists(os.path.join(ROOT, exp["produces"])):
-            log(f"  訓練中…（{' '.join(exp['train'][:3])} …）")
-            t0 = time.time()
-            rc, out = run(exp["train"])
-            if rc != 0:
-                log(f"  訓練失敗，跳過：\n{out[-1200:]}")
+    pending = list(queue)
+    running = []        # [(exp, Popen, fh, log_path, t0)]
+    to_gate = []        # 訓練完成、等待 gate 的實驗
+
+    def used_mem():
+        return sum(e.get("mem_gb", 4.0) for e, *_ in running)
+
+    def can_start(exp):
+        if len(running) >= args.jobs:
+            return False
+        return used_mem() + exp.get("mem_gb", 4.0) <= budget or not running
+
+    while pending or running or to_gate:
+        # 1) 在預算內盡量塞新的訓練
+        while pending and can_start(pending[0]):
+            exp = pending.pop(0)
+            if not exp.get("train") or os.path.exists(os.path.join(ROOT, exp["produces"])):
+                log(f"[{exp['name']}] 產物已存在，直接排入 gate")
+                to_gate.append(exp)
+                continue
+            lp = os.path.join(ROOT, "artifacts", f"train_{exp['name']}.log")
+            proc, fh = spawn(exp["train"], lp)
+            running.append((exp, proc, fh, lp, time.time()))
+            log(f"[{exp['name']}] 開始訓練（併發 {len(running)}/{args.jobs}，"
+                f"預估佔用 {used_mem():.1f}/{budget:.1f} GB）")
+            log(f"    {exp['why']}")
+
+        # 2) 收割訓練完成的
+        for item in list(running):
+            exp, proc, fh, lp, t0 = item
+            if proc.poll() is None:
+                continue
+            running.remove(item); fh.close()
+            mins = (time.time() - t0) / 60
+            if proc.returncode != 0:
+                log(f"[{exp['name']}] 訓練失敗（{mins:.1f} 分），見 {lp}")
                 st["done"][exp["name"]] = {"status": "train_failed"}
+                save_state(st)
+            else:
+                log(f"[{exp['name']}] 訓練完成（{mins:.1f} 分）→ 排入 gate")
+                to_gate.append(exp)
+
+        # 3) Gate 一律**序列**執行。
+        #    它要跑 8 組題目的推論，同樣吃 MPS；與訓練搶資源會讓兩邊都變慢，
+        #    而且 gate 很快（有快取時幾秒），沒有平行的必要。
+        if to_gate and (not running or len(running) < args.jobs or not pending):
+            exp = to_gate.pop(0)
+            log(f"[{exp['name']}] 用 8 組 player-disjoint 協定 gate…")
+            rc, out = run(exp["eval"], env_extra=exp.get("eval_env"))
+            if rc != 0:
+                log(f"[{exp['name']}] 評估失敗：\n{out[-1200:]}")
+                st["done"][exp["name"]] = {"status": "eval_failed"}
                 save_state(st); continue
-            log(f"  訓練完成（{(time.time() - t0) / 60:.1f} 分）")
-        else:
-            log("  產物已存在，跳過訓練")
+            with open(os.path.join(ROOT, exp["json"])) as f:
+                res = json.load(f)
+            score, prod = res["best_score"], st["production"]
+            gain = score - prod
+            won = gain >= args.floor
+            verdict = "採用" if won else ("增益低於門檻" if gain > 0 else "無增益")
+            log(f"[{exp['name']}] 分數 {score:.4f}（現況 {prod:.4f}，"
+                f"差 {gain:+.4f}）→ {verdict}")
+            detail = (f"建議把 `predict.py` 的 `--rank-seq` 預設改成 "
+                      f"`{exp.get('eval_env', {}).get('AICUP_SEQ', '?')}`"
+                      if won else "維持現況")
+            record(exp, score, prod, verdict, detail)
+            st["done"][exp["name"]] = {"score": score, "gain": gain, "won": won}
+            if won:
+                st["production"] = score
+            save_state(st)
+            git_commit(f"exp: {exp['name']} scores {score:.4f} ({verdict})")
+            continue
 
-        log("  用 8 組 player-disjoint 協定 gate…")
-        rc, out = run(exp["eval"], env_extra=exp.get("eval_env"))
-        if rc != 0:
-            log(f"  評估失敗，跳過：\n{out[-1200:]}")
-            st["done"][exp["name"]] = {"status": "eval_failed"}
-            save_state(st); continue
-
-        with open(os.path.join(ROOT, exp["json"])) as f:
-            res = json.load(f)
-        score, prod = res["best_score"], st["production"]
-        gain = score - prod
-        won = gain >= args.floor
-        verdict = "採用" if won else ("增益低於門檻" if gain > 0 else "無增益")
-        log(f"  分數 {score:.4f}（現況 {prod:.4f}，差 {gain:+.4f}）→ {verdict}")
-
-        detail = (f"建議把 `predict.py` 的 `--rank-seq` 預設改成 "
-                  f"`{exp.get('eval_env', {}).get('AICUP_SEQ', '?')}`"
-                  if won else "維持現況")
-        record(exp, score, prod, verdict, detail)
-        st["done"][exp["name"]] = {"score": score, "gain": gain, "won": won}
-        if won:
-            st["production"] = score
-        save_state(st)
-        git_commit(f"exp: {exp['name']} scores {score:.4f} ({verdict})")
-        log(f"  已記錄並 commit。{'生產分數更新為 %.4f' % score if won else ''}")
+        if running or pending or to_gate:
+            time.sleep(20)
 
     log("=" * 62)
     log(f"佇列跑完。生產分數 {st['production']:.4f}"

@@ -129,7 +129,7 @@ def question_posteriors(nets, S, ok, lens, game_rows, device, batch: int = 256):
             sel = rows[ok[rows]]
             if len(sel) == 0:
                 out.append(np.full(10, 0.1)); continue
-            x = torch.from_numpy(np.asarray(S[sel], dtype=np.float32)).to(device)
+            x = torch.from_numpy(np.asarray(S[sel], dtype=np.float16)).to(device).float()
             mk = torch.from_numpy(
                 np.arange(S.shape[1])[None, :] < lens[sel][:, None]).to(device)
             ps = []
@@ -190,12 +190,17 @@ def main() -> int:
             if args.train_games else pool)
     print(f"訓練局數 {len(rows):,}，序列 {S.shape[1]}×{S.shape[-1]}", flush=True)
 
-    Xtr = np.asarray(S[rows], dtype=np.float32)
+    # ⚠️ 保持 float16，**不要**在這裡升成 float32。
+    # 來源序列庫本來就是 float16（所有欄位都已正規化到 [0,1]，精度夠）；
+    # 升成 float32 會讓 78 萬局 × 160 手 × 24 維從 6 GB 變成 12 GB，
+    # 在 26 GB 的機器上直接吃掉一半記憶體，也讓平行訓練變得不可能。
+    # 只在每個 batch 搬上裝置時才轉型，成本可忽略。
+    Xtr = np.asarray(S[rows], dtype=np.float16)
     ltr = (np.abs(Xtr).sum(-1) > 0).sum(-1)
     ytr = torch.from_numpy(rank_id[rows]).long()
     Xt = torch.from_numpy(Xtr)
     Mt = torch.from_numpy(np.arange(S.shape[1])[None, :] < ltr[:, None])
-    print(f"  訓練張量 {Xt.nbytes / 1e9:.2f} GB", flush=True)
+    print(f"  訓練張量 {Xt.nbytes / 1e9:.2f} GB（float16）", flush=True)
 
     soft, corn = SoftLabelCrossEntropy(10, decay=1.0), CornLoss(10)
     nets = []
@@ -208,7 +213,7 @@ def main() -> int:
         net.train(); t0 = time.time()
         for _ in range(args.steps):
             i = torch.randint(0, len(ytr), (args.batch,))
-            lc, lo = net(Xt[i].to(device), Mt[i].to(device))
+            lc, lo = net(Xt[i].to(device).float(), Mt[i].to(device))
             yb = ytr[i].to(device)
             loss = soft(lc, yb) + 0.5 * corn(lo, yb)
             opt.zero_grad(set_to_none=True); loss.backward()
