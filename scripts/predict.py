@@ -73,13 +73,18 @@ def _question_features(df: pd.DataFrame, with_opponent: bool = False):
     return out
 
 
-def _question_sequences(df: pd.DataFrame):
-    """把一份題目檔轉成 [每題的逐手序列張量, 長度]。
+def _question_sequences(df: pd.DataFrame, with_opponent: bool = False):
+    """把一份題目檔轉成 [每題的逐手序列張量]。
 
     與 `_question_features` 平行：那個抽整局的統計摘要，這個抽逐手序列。
     有效判斷兩邊一致（手數 < 30 或我方手數 < 15 就算失敗）。
+
+    with_opponent=True 會同時抽對手視角的序列並沿**特徵軸**串接
+    （每一手 12 維 → 24 維），順序必須與訓練時一致。
     """
-    from aicup.moveseq import MAX_MOVES, batch_move_sequences
+    from aicup.features import normalise_color
+    from aicup.goboard import BLACK
+    from aicup.moveseq import batch_move_sequences
 
     sgf_cols = [f"sgf_{i}" for i in range(1, MAX_GAMES + 1)]
     col_cols = [f"color_{i}" for i in range(1, MAX_GAMES + 1)]
@@ -92,6 +97,11 @@ def _question_sequences(df: pd.DataFrame):
                 flat_sgf.append(v); flat_col.append(r[cc]); n += 1
         sizes.append(n)
     S, ok = batch_move_sequences(flat_sgf, flat_col)
+    if with_opponent:
+        flip = ["W" if normalise_color(c) == BLACK else "B" for c in flat_col]
+        So, oko = batch_move_sequences(flat_sgf, flip)
+        S = np.concatenate([S, So], axis=-1)
+        ok = ok & oko
     out, pos = [], 0
     for n in sizes:
         blk = S[pos:pos + n][ok[pos:pos + n]]
@@ -232,14 +242,22 @@ def main() -> int:
                          "伺服器把你配對給實力相近的人，對手的表現反映配對分級，"
                          "而分級反映你的穩定實力。實測 +0.0491±0.0232（6/6 勝，t=5.19）。"
                          "⚠️ 給了這個就會在測試集上多抽一次特徵，時間加倍")
-    ap.add_argument("--rank-seq", default="cache/rank_seq/models.pt",
+    ap.add_argument("--rank-seq", default="cache/rank_seq_opp/models.pt",
                     help="競賽二的逐手序列模型（dilated 1D-CNN）。"
                          "589 維是整局的統計摘要，看不到『愚形出現在第 30 手還是第 150 手』。"
-                         "8 組 player-disjoint 實測：疊在對手視角管線之上 "
-                         "0.5402 → 0.5553（+0.0151）。設為空字串則停用")
-    ap.add_argument("--seq-weight", type=float, default=0.45,
-                    help="序列模型的融合權重。w 在 0.35~0.55 之間是平台"
-                         "（0.5532~0.5553），確切值不敏感")
+                         "預設是**雙視角**版本（我方 12 維 + 對手 12 維 = 24 維/手），"
+                         "單獨就有 0.5460——比整條對手視角管線（0.5402）還高，"
+                         "而且完全不用 589 維手工特徵。設為空字串則停用")
+    ap.add_argument("--extra-sequences", nargs="*",
+                    default=["cache/sequences_opp.npy"],
+                    help="序列模型的額外視角，必須與訓練時一致。"
+                         "給了這個就會在測試集上多抽一次序列（時間加倍）")
+    ap.add_argument("--seq-weight", type=float, default=0.7,
+                    help="序列模型的融合權重。8 組 player-disjoint 掃過 0.35~0.9，"
+                         "峰值在 0.7（0.5639±0.0104，+0.0237，8/8 勝，t=15.09），"
+                         "0.7~0.8 是平台（0.5629~0.5639），確切值不敏感。"
+                         "⚠️ 權重比單局模型還高——序列模型單獨（0.5483）"
+                         "已經比整條對手視角管線（0.5402）強")
     ap.add_argument("--sinkhorn", type=float, default=0.0075,
                     help="競賽一的全域指派強度（0 = 關閉）。官方每池 400 題 / 400 候選，"
                          "每題獨立 argmax 沒用到這個全域約束。15 次評估實測 "
@@ -306,8 +324,9 @@ def main() -> int:
                                "mps" if torch.backends.mps.is_available() else "cpu")
         sck = torch.load(args.rank_seq, map_location=seq_dev, weights_only=False)
         seq_nets = []
+        _nfeat = 12 * (1 + len(sck["args"].get("extra_sequences", [])))
         for sd in sck["models"]:
-            n = SeqRankNet(width=sck["args"]["width"])
+            n = SeqRankNet(n_feat=_nfeat, width=sck["args"]["width"])
             n.load_state_dict(sd); n.eval().to(seq_dev)
             seq_nets.append(n)
         print(f"  ＋逐手序列模型（{len(seq_nets)} 個，融合權重 {args.seq_weight}）",
@@ -338,9 +357,15 @@ def main() -> int:
         _lo = np.log(np.clip(_P, 1e-12, None))
         if seq_nets is not None:
             from aicup.moveseq import MAX_MOVES as _MM
-            _S = np.load("cache/sequences.npy", mmap_mode="r")
-            _sok = np.load("cache/sequences_ok.npy")
-            _blocks = [np.asarray(_S[r[_sok[r]]], dtype=np.float32) for r in _q.game_rows]
+            _sp = ["cache/sequences.npy"] + list(args.extra_sequences)
+            _Ss = [np.load(x, mmap_mode="r") for x in _sp]
+            _sok = None
+            for x in _sp:
+                _m = np.load(x.replace(".npy", "_ok.npy"))
+                _sok = _m if _sok is None else (_sok & _m)
+            _blocks = [np.concatenate(
+                [np.asarray(z[r[_sok[r]]], dtype=np.float32) for z in _Ss], axis=-1)
+                for r in _q.game_rows]
             _ls = np.log(np.clip(_seq_posteriors_from_blocks(seq_nets, _blocks, seq_dev),
                                  1e-12, None))
             from aicup.question_model import blend_log_posteriors as _blp
@@ -389,7 +414,7 @@ def main() -> int:
         lo = np.log(np.clip(P, 1e-12, None))
         if seq_nets is not None:
             from aicup.question_model import blend_log_posteriors as _blp
-            blocks = _question_sequences(df)
+            blocks = _question_sequences(df, with_opponent=bool(args.extra_sequences))
             ls = np.log(np.clip(
                 _seq_posteriors_from_blocks(seq_nets, blocks, seq_dev), 1e-12, None))
             lo = _blp(lo, ls, w=args.seq_weight)
