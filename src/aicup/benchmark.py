@@ -26,6 +26,28 @@ from . import LEVELS
 from .data import PlayerSplit
 
 MIN_GAMES, MAX_GAMES = 5, 20
+
+# ⚠️ 官方規格：查詢棋譜集是「**5, 10, 15, 20 盤各 100 組**」，
+# 不是 5~20 的均勻隨機。差別不小——官方有 **25% 的題目只有 5 盤**（最難的情況），
+# 而均勻隨機只有 1/16 = 6.25%。
+# 用錯的分布校準切點，會讓驗證分數偏樂觀，而且切點是配在錯的題型組成上。
+OFFICIAL_SIZES = (5, 10, 15, 20)
+
+
+def _draw_size(rng, available: int, sizes, target: int | None = None) -> int:
+    """決定一個題目的局數，並夾在該玩家實際可用的局數內。
+
+    target 是「希望」的局數（來自全域輪替，讓四種題型各佔 25%）；
+    玩家局數不足時退到他供得起的最大值。
+    """
+    if sizes == "uniform":
+        return int(rng.integers(MIN_GAMES, min(MAX_GAMES, available) + 1))
+    allowed = [k for k in OFFICIAL_SIZES if k <= available]
+    if not allowed:                       # 連 5 盤都不夠的玩家在上游就被濾掉了
+        return MIN_GAMES
+    if target is not None:
+        return target if target <= allowed[-1] else allowed[-1]
+    return int(rng.choice(allowed))
 N_CANDIDATES, N_GALLERY = 400, 100
 
 Composition = Literal["uniform", "natural", "dan_only", "kyu_only", "skewed"]
@@ -93,18 +115,31 @@ def _player_rows(meta: pd.DataFrame, players) -> dict[str, np.ndarray]:
 
 def build_rank_questions(meta: pd.DataFrame, split: PlayerSplit, *,
                          n_per_player: int = 3, seed: int = 0,
-                         max_questions: int | None = None) -> RankQuestions:
-    """從驗證玩家建立競賽二的模擬題目。每位玩家出 n_per_player 題。"""
+                         max_questions: int | None = None,
+                         sizes: str = "official") -> RankQuestions:
+    """從驗證玩家建立競賽二的模擬題目。每位玩家出 n_per_player 題。
+
+    sizes="official"（預設）：局數從 {5, 10, 15, 20} 等機率抽，與官方規格一致。
+    sizes="uniform"：5~20 均勻隨機（2026-09-20 之前的舊行為，偏樂觀）。
+    """
     rng = np.random.default_rng(seed)
     rows = _player_rows(meta, split.val_players)
     rank_of = meta.groupby("player_id")["rank_id"].first()
 
+    # 全域輪替四種題型，讓 5/10/15/20 各佔約 25%（官方是各 100 組）。
+    # 逐玩家獨立抽會讓局數少的玩家把分布拉向小題型（實測 30.5/27/21.8/20.7）。
+    eligible = [(pid, idx) for pid, idx in rows.items() if len(idx) >= MIN_GAMES]
+    n_slots = len(eligible) * n_per_player
+    targets = np.array(list(OFFICIAL_SIZES) * (n_slots // len(OFFICIAL_SIZES) + 1))[:n_slots]
+    rng.shuffle(targets)
+
     game_rows, true_rank, pids = [], [], []
-    for pid, idx in rows.items():
-        if len(idx) < MIN_GAMES:
-            continue
+    slot = 0
+    for pid, idx in eligible:
         for _ in range(n_per_player):
-            k = int(rng.integers(MIN_GAMES, min(MAX_GAMES, len(idx)) + 1))
+            tgt = int(targets[slot]) if sizes != "uniform" else None
+            slot += 1
+            k = _draw_size(rng, len(idx), sizes, target=tgt)
             game_rows.append(rng.choice(idx, size=k, replace=False))
             true_rank.append(int(rank_of[pid]))
             pids.append(pid)
@@ -159,7 +194,7 @@ def _choose_candidates(eligible_by_rank: dict[int, list[str]], composition: Comp
 
 def build_player_pool(meta: pd.DataFrame, split: PlayerSplit, *,
                       n_candidates: int = N_CANDIDATES, n_gallery: int = N_GALLERY,
-                      composition: Composition = "uniform", seed: int = 0) -> PlayerPool:
+                      composition: Composition = "uniform", seed: int = 0, sizes: str = "official") -> PlayerPool:
     """建立競賽一的模擬候選庫。gallery 與 query 的棋局互不重疊。"""
     rng = np.random.default_rng(seed)
     rows = _player_rows(meta, split.val_players)
@@ -178,7 +213,7 @@ def build_player_pool(meta: pd.DataFrame, split: PlayerSplit, *,
         idx = rows[pid].copy()
         rng.shuffle(idx)
         g = min(n_gallery, len(idx) - MIN_GAMES)
-        k = int(rng.integers(MIN_GAMES, min(MAX_GAMES, len(idx) - g) + 1))
+        k = _draw_size(rng, len(idx) - g, sizes)
         gallery[pid] = idx[:g]
         query[pid] = idx[g:g + k]
         rid[pid] = int(rank_of[pid])

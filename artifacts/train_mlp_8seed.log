@@ -1,0 +1,14 @@
+device = cpu
+  特徵庫 1178 維（含 1 份額外），共同有效 1.0000
+訓練局數 783,582，特徵 1178 維
+  seed 0 loss 1.8955 (15.2 分)
+  seed 1 loss 1.9128 (14.1 分)
+  seed 2 loss 1.9350 (14.8 分)
+  seed 3 loss 1.9173 (15.8 分)
+  seed 4 loss 1.9212 (15.3 分)
+  seed 5 loss 1.9490 (14.3 分)
+  seed 6 loss 1.9127 (18.9 分)
+  seed 7 loss 1.9179 (14.0 分)
+
+期望解碼 0.4834 ／ 切點解碼 0.5259（官方 baseline 0.4631）
+已寫出 cache/rank_mlp_opp8/models.pt

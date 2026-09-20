@@ -223,3 +223,68 @@ def test_question_set_is_independent_of_set_iteration_order(meta, split):
     a = build_rank_questions(meta, split, n_per_player=1, seed=3, max_questions=40)
     b = build_rank_questions(meta, shuffled, n_per_player=1, seed=3, max_questions=40)
     assert list(a.player_id) == list(b.player_id)
+
+
+# ---------------------------------------------------------------------------
+# 官方規格：查詢棋譜集是「5, 10, 15, 20 盤各 100 組」，不是 5~20 均勻隨機。
+# 用錯的局數分布校準切點，會讓驗證分數偏樂觀——
+# 官方有 25% 的題目只有 5 盤（最難），均勻隨機只有 6.25%。
+# ---------------------------------------------------------------------------
+
+def test_official_sizes_constant():
+    from aicup.benchmark import OFFICIAL_SIZES
+    assert OFFICIAL_SIZES == (5, 10, 15, 20)
+
+
+def test_draw_size_respects_availability():
+    """玩家局數不足時要退到供得起的最大值，不能超抽。"""
+    import numpy as np
+
+    from aicup.benchmark import _draw_size
+
+    rng = np.random.default_rng(0)
+    for avail in (5, 7, 12, 19, 40):
+        for tgt in (5, 10, 15, 20):
+            k = _draw_size(rng, avail, "official", target=tgt)
+            assert k <= avail and k in (5, 10, 15, 20)
+
+
+def test_draw_size_uniform_mode_is_continuous():
+    """舊行為要保留，才能對照「換了分布之後分數差多少」。"""
+    import numpy as np
+
+    from aicup.benchmark import _draw_size
+
+    rng = np.random.default_rng(0)
+    got = {_draw_size(rng, 20, "uniform") for _ in range(400)}
+    assert got - set(range(5, 21)) == set()
+    assert len(got) > 8, "均勻模式應涵蓋 5~20 的多數值"
+
+
+def test_official_mode_only_emits_official_sizes():
+    import numpy as np
+
+    from aicup.benchmark import build_rank_questions
+    from aicup.data import load_metadata, make_player_split
+
+    meta = load_metadata()
+    split = make_player_split(meta, val_frac=0.20, seed=42)
+    q = build_rank_questions(meta, split, n_per_player=1, seed=0, max_questions=500)
+    sizes = {len(r) for r in q.game_rows}
+    assert sizes <= {5, 10, 15, 20}, f"出現非官方的局數 {sizes - {5,10,15,20}}"
+
+
+def test_official_mode_is_roughly_balanced():
+    """全域輪替要讓四種題型接近各 25%——逐玩家獨立抽會偏向小題型。"""
+    import numpy as np
+
+    from aicup.benchmark import build_rank_questions
+    from aicup.data import load_metadata, make_player_split
+
+    meta = load_metadata()
+    split = make_player_split(meta, val_frac=0.20, seed=42)
+    q = build_rank_questions(meta, split, n_per_player=3, seed=0)
+    sz = np.array([len(r) for r in q.game_rows])
+    for k in (5, 10, 15, 20):
+        frac = (sz == k).mean()
+        assert 0.18 <= frac <= 0.32, f"{k} 盤佔 {frac:.3f}，偏離 25% 太多"
