@@ -241,3 +241,54 @@ def expected_level(probs: np.ndarray) -> np.ndarray:
     """由後驗機率算期望等級（連續值）。可餵給 optimise_thresholds。"""
     probs = np.asarray(probs, dtype=np.float64)
     return probs @ np.arange(probs.shape[-1], dtype=np.float64)
+
+def estimate_prior_em(probs, source_prior=None, iters: int = 100,
+                      tol: float = 1e-7, floor: float = 1e-3,
+                      weights=None, shrink: float = 0.0):
+    """由**未標註**的測試後驗估計測試集的類別先驗（Saerens–Latinne–Decaestecker EM）。
+
+    為什麼需要：官方測試集是 400 位玩家各一題，它的等級分布是**玩家層級**的，
+    而我們的驗證題目用的是驗證玩家的自然分布（rank 3 佔 19.8%、rank 4 佔 5.4%）。
+    實測若真實測試集是等級平衡的，同一套系統會從 0.5703 掉到 0.5331——
+    **落差全部來自先驗不匹配，與模型好壞無關**（見 RESULTS.md 的先驗穩健性一節）。
+
+    固定押注（一律用自然、或一律用均勻）在最壞情況下差 0.010，
+    而且賭錯的代價比賭對的收益大。EM 不用賭：它直接從測試後驗把先驗估出來。
+
+    ⚠️ 這是 transductive 的，只用到測試輸入的**後驗**，沒有用到任何標籤。
+
+    floor 是估計先驗的下限。EM 可以把某個等級推到 0，之後除法會爆掉，
+    而且真實測試集裡某個等級剛好一題都沒有的機率極低。
+
+    shrink 把估計往 source_prior 拉回 shrink 的比例。官方測試集只有 400 題，
+    EM 在這個樣本量下對稀有等級會過衝（合成檢查裡真值 0.02 被估成 0.001），
+    收縮是對「估計本身有雜訊」最直接的保險。
+
+    weights 是每一題的權重，給重要性加權的評估用——
+    評估時測試先驗是用權重模擬的，EM 也必須看同一個加權分布才一致。
+    """
+    P = np.asarray(probs, dtype=np.float64)
+    P = P / np.maximum(P.sum(axis=1, keepdims=True), 1e-300)
+    n_levels = P.shape[1]
+    src = (np.full(n_levels, 1.0 / n_levels) if source_prior is None
+           else np.asarray(source_prior, dtype=np.float64))
+    src = np.maximum(src, floor); src /= src.sum()
+
+    sw = (np.ones(len(P)) if weights is None
+          else np.asarray(weights, dtype=np.float64))
+    sw = sw / max(sw.sum(), 1e-300)
+
+    pri = src.copy()
+    for _ in range(iters):
+        w = P * (pri / src)[None, :]
+        w /= np.maximum(w.sum(axis=1, keepdims=True), 1e-300)
+        new = np.maximum(sw @ w, floor)
+        new /= new.sum()
+        done = np.abs(new - pri).max() < tol
+        pri = new
+        if done:
+            break
+    if shrink > 0:
+        pri = (1 - shrink) * pri + shrink * src
+        pri /= pri.sum()
+    return pri

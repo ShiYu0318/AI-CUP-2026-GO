@@ -106,14 +106,21 @@ class Stacker:
                 f"stacker 擬合時的成分是 {self.parts}，推論時卻是 {got}。"
                 "兩邊必須完全一致，否則特徵欄位會對錯。")
 
-    def expected_level(self, X: np.ndarray) -> np.ndarray:
-        """回傳每題的期望等級（連續值），交給 `optimise_thresholds` 解碼。"""
+    def proba(self, X: np.ndarray) -> np.ndarray:
+        """(n, n_levels) 後驗機率。
+
+        LogisticRegression 只會輸出訓練時見過的類別，缺的等級要補零再
+        重新正規化，否則欄位會對錯——這是 `expected_level` 與先驗估計
+        共用的一步，所以抽出來。
+        """
         if self.model is None:
             raise RuntimeError("Stacker 尚未 fit")
         P = self.model.predict_proba((np.asarray(X, dtype=np.float64) - self.mu) / self.sd)
-        # LogisticRegression 只會輸出訓練時見過的類別，缺的等級要補零再重新正規化，
-        # 否則 expected_level 會對錯欄位加權。
         full = np.zeros((len(P), self.n_levels))
         full[:, self.model.classes_] = P
         full /= np.maximum(full.sum(axis=1, keepdims=True), 1e-300)
-        return expected_level(full)
+        return full
+
+    def expected_level(self, X: np.ndarray) -> np.ndarray:
+        """回傳每題的期望等級（連續值），交給 `optimise_thresholds` 解碼。"""
+        return expected_level(self.proba(X))
