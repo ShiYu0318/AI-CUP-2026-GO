@@ -50,15 +50,70 @@ python3 scripts/predict.py --test-dir tests --out-dir .
 
 ## 二、事前必須就緒的東西
 
-| 檔案 | 產生方式 | 大約耗時 |
+⚠️ 這張表**必須與 `scripts/predict.py` 的預設值一致**。
+舊版列的是 `rank_mlp_big` / `rank_question`，但實際上線的是 `_opp` 版本——
+照舊表在新機器上準備會缺檔案，而且缺的時候 `predict.py` 是**靜默降級**，
+不是報錯。改動 `predict.py` 的預設時請一起改這裡。
+
+### 資料層（先建，其他全部依賴它）
+
+| 產出 | 指令 | 耗時 |
 |---|---|---|
-| `cache/features.npy`（2.2 GB） | `python3 scripts/build_feature_store.py` | 約 10 分 |
-| `cache/rank_mlp_big/models.pt` | `python3 scripts/train_rank_mlp.py --train-games 0 --seeds 5 --out cache/rank_mlp_big` | 約 1.5 小時（MPS） |
-| `cache/rank_question/models.pt` | `python3 scripts/train_rank_question.py --seeds 3` | 約 20 分 |
+| `cache/features.npy`（2.2 GB） | `python3 scripts/build_feature_store.py --nproc 10` | 約 10 分 |
+| `cache/features_opp.npy` | `python3 scripts/build_feature_store.py --nproc 10 --opponent` | 約 10 分 |
+| `cache/sequences.npy`（3.8 GB） | `python3 scripts/build_sequence_store.py --nproc 10` | 約 8 分 |
+| `cache/sequences_opp.npy`（3.8 GB） | `python3 scripts/build_sequence_store.py --nproc 10 --opponent` | 約 8 分 |
+| `cache/seqshape.npy`（3.8 GB） | `python3 scripts/build_sequence_store.py --nproc 10 --shape` | 約 8 分 |
+| `cache/seqshape_opp.npy`（3.8 GB） | `python3 scripts/build_sequence_store.py --nproc 10 --shape --opponent` | 約 8 分 |
+| `cache/features_shape*.npy`（各 192 MB） | `python3 scripts/build_shape_features.py [--opponent]` | 各 20 秒 |
+
+### 模型層（`predict.py` 的預設就是這些）
+
+| 產出 | 指令 | 耗時 |
+|---|---|---|
+| `cache/rank_mlp_opp_big/models.pt` | `python3 scripts/train_rank_mlp.py --extra-features cache/features_opp.npy --train-games 0 --seeds 5 --out cache/rank_mlp_opp_big` | 約 1.5 小時（CPU 較快） |
+| `cache/rank_question_opp/models.pt` | `python3 scripts/train_rank_question.py --extra-features cache/features_opp.npy --seeds 3 --out cache/rank_question_opp` | 約 20 分 |
+| `cache/rank_seq_opp/models.pt` | `python3 scripts/train_rank_seq.py --extra-sequences cache/sequences_opp.npy --seeds 3` + `--out cache/rank_seq_opp` | 約 1.5 小時（MPS） |
+| `cache/rank_seq_opp_full/models.pt` | 同上，`--train-games 0 --out cache/rank_seq_opp_full` | 約 2.5 小時 |
+| `cache/rank_seq_w192/models.pt` | 同上，`--width 192 --out cache/rank_seq_w192` | 約 2 小時 |
 | `cache/feature_metric/models.pt` | `python3 scripts/train_feature_metric.py --seeds 3` | 約 30 分 |
 
-四個都在就可以直接跑 `predict.py`。缺 `cache/features.npy` 時
-其他訓練腳本都跑不了，先建它。
+三個序列變體**都要**——它們是三個獨立的 stacker 成分，
+少一個 stacker 的特徵維度就對不上（`Stacker.check_parts` 會擋下來並報錯）。
+
+驗證全部就緒：`python3 scripts/predict.py`（會印出離線分數）。
+
+## 二之二、租到 GPU 的話按這個順序做
+
+本機是 Apple Silicon，**CUDA 永遠不可用**；`pick_device()` 的順序是
+cuda → mps → cpu，所以同一份程式在 NVIDIA 機器上不用改就會走 CUDA。
+
+```bash
+# 0) 先把資料層建起來（純 CPU，與 GPU 無關，可與下面並行）
+python3 scripts/build_feature_store.py   --nproc $(nproc)
+python3 scripts/build_feature_store.py   --nproc $(nproc) --opponent
+python3 scripts/build_sequence_store.py  --nproc $(nproc)
+python3 scripts/build_sequence_store.py  --nproc $(nproc) --opponent
+python3 scripts/build_sequence_store.py  --nproc $(nproc) --shape
+python3 scripts/build_sequence_store.py  --nproc $(nproc) --shape --opponent
+python3 scripts/build_shape_features.py
+python3 scripts/build_shape_features.py --opponent
+
+# 1) 板面 CNN —— GPU 上唯一值得排的大工作
+#    這是目前**唯一**測到誤差與單局模型負相關的成分（−0.14 ~ −0.22），
+#    比任何已知有效的成分都互補，但在 MPS 上跑不動。
+#    單張 A100/4090 約 6~10 小時；有 --resume 與 --max-hours，被砍掉可接著跑。
+python3 scripts/train.py --width 128 --blocks 10 --embed-dim 512 \
+    --pool set_transformer --steps 60000 --p 16 --k 4 \
+    --quality-weight 0.3 --balance-losses \
+    --eval-questions 800 --save-every 1000 --max-hours 10 \
+    --out cache/cnn_gpu
+```
+
+**先不要在 GPU 上重跑序列模型與 MLP。** 實測它們已經飽和：
+加 seed +0.0010、加資料 +0.0041、加寬 +0.0049、換成 GRU −0.0001，
+全部低於門檻（RESULTS.md §2.19）。GPU 的價值在**板面 CNN 這個新資訊源**，
+不在把既有模型訓練得更久。
 
 ## 三、當天最可能出錯的三件事
 
