@@ -49,6 +49,10 @@ from aicup.scoring import (apply_temperature, apply_thresholds,  # noqa: E402
 # 不改原始碼的情況下把評估指向另一個候選模型。
 # ⚠️ 快取的 key 帶有 checkpoint 的**內容指紋**，所以換模型不會拿到舊後驗。
 GAME = os.environ.get("AICUP_GAME", "cache/rank_mlp_opp_big/models.pt")
+# 板面 CNN。空字串 = 不使用（預設）。它是唯一測到誤差與單局模型**負相關**
+# 的成分（−0.14 ~ −0.22），但推論要即時重播 SGF 產生 34×19×19 的張量，
+# 比其他成分貴一個數量級——所以只在明確指定時才算，而且結果會進 OOF 快取。
+BOARD = os.environ.get("AICUP_BOARD", "")
 QUESTION = os.environ.get("AICUP_QUESTION", "cache/rank_question_opp/models.pt")
 # ⚠️ 預設**就是上線中的三變體集成**，不是單一模型。
 # 實測 seq_full（+0.0053）與 seq_w192（+0.0061）各自都沒過 0.005 門檻，
@@ -102,6 +106,7 @@ class Components:
         from train_rank_seq import question_posteriors as seq_posteriors
         self._RankMLP, self._qp = RankMLP, question_posteriors
         self._SeqNet, self._SeqStore, self._sp = build_seq_net, SeqStore, seq_posteriors
+        self._meta = None
         self.X, self.ok = open_stores(FEATS)
         if GAME_FEATS:
             self.Xg, okg = open_stores(GAME_FEATS)
@@ -139,6 +144,54 @@ class Components:
                 ps.append(0.5 * torch.softmax(lc, -1).cpu().numpy()
                           + 0.5 * pc / np.maximum(pc.sum(1, keepdims=True), 1e-12))
         return _log(np.mean(ps, axis=0))
+
+    def board(self, q, ckpt=None):
+        """板面 CNN 的題目層級後驗。
+
+        用 `forward_set`——模型本來就是用集合池化在**題目層級**訓練的，
+        比逐局後驗再幾何平均更貼近它學到的東西。
+
+        ⚠️ 一定要用 `load_gonet`（strict=True），不要用 `strict=False`。
+        `pool` / `global_pool_bias` 曾經漏存，strict=False 會**靜默地**
+        載入一個隨機初始化的 pooling head，讓整個評估失去意義
+        （RESULTS.md 四章的靜默 bug 之一）。
+        """
+        ckpt = ckpt or BOARD
+        key = f"board::{ckpt}"
+        if key not in self._loaded:
+            from aicup.dataset import SgfCache
+            from aicup.nets import load_gonet
+            from aicup.planes import game_planes
+            ck = torch.load(ckpt, map_location=self.dev, weights_only=False)
+            net = load_gonet(ck["model"], ck.get("config"))
+            net.eval().to(self.dev)
+            nsnap = int(ck["args"].get("snapshots", 4))
+            self._loaded[key] = (net, SgfCache(), game_planes, nsnap)
+        net, cache, game_planes, nsnap = self._loaded[key]
+        if self._meta is None:
+            self._meta = load_metadata()
+        meta = self._meta
+
+        out = []
+        with torch.no_grad():
+            for rows in q.game_rows:
+                planes = []
+                for r in rows:
+                    rec = meta.iloc[int(r)]
+                    t = game_planes(cache.get(int(rec["file_idx"]), int(rec["row"])),
+                                    rec["color"], n_snapshots=nsnap)
+                    if t is not None:
+                        planes.append(t.mean(axis=0))
+                if not planes:
+                    out.append(np.full(10, 0.1)); continue
+                x = torch.from_numpy(np.stack(planes)).float().to(self.dev)[None]
+                o = net.forward_set(x)
+                pc = corn_to_proba(o["corn_logits"]).cpu().numpy()
+                pc = pc / np.maximum(pc.sum(axis=1, keepdims=True), 1e-12)
+                p = (0.5 * torch.softmax(o["rank_logits"], -1).cpu().numpy()
+                     + 0.5 * pc)[0]
+                out.append(p / p.sum())
+        return _log(np.stack(out))
 
     def seq(self, q, ckpt=None, stores=None):
         """一個序列 checkpoint 的題目層級 log 後驗。
@@ -242,6 +295,8 @@ def main() -> int:
         parts, y = {}, None
         comps = [("game", comp.game, [GAME]),
                  ("question", comp.question, [QUESTION])]
+        if BOARD:
+            comps.append(("board", comp.board, [BOARD]))
         for _ck, _st in zip(SEQ, SEQS):
             _tag = f"seq_{os.path.basename(os.path.dirname(_ck))}"
             comps.append((_tag,
