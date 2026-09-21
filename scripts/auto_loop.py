@@ -134,6 +134,31 @@ EXPERIMENTS = [
         "json": "artifacts/blend_seqshape.json",
     },
     {
+        "name": "mlp_shape",
+        "device": "cpu",
+        "mem_gb": 7.0,
+        "why": "**把棋形接到最強的成分上**。stacker 裡貢獻最大的是單局 MLP，"
+               "但它讀的 1178 維手工特徵沒有手法類別。線性探針："
+               "手工 0.2826、棋形統計 96 維單獨 0.2609、合併 0.2987（+0.0161）——"
+               "**96 維就達到 1178 維九成的水準**，代表手工特徵嚴重低估了棋形",
+        "train": ["python3", "scripts/train_rank_mlp.py",
+                  "--extra-features", "cache/features_opp.npy",
+                  "cache/features_shape.npy", "cache/features_shape_opp.npy",
+                  "--seeds", "5", "--steps", "20000", "--hidden", "1024",
+                  "--train-games", "0", "--device", "cpu",
+                  "--out", "cache/rank_mlp_shape"],
+        "produces": "cache/rank_mlp_shape/models.pt",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+                 "--json-out", "artifacts/blend_mlpshape.json"],
+        # 單局模型是**取代**不是附加——它在 stacker 裡只有一個成分，
+        # 而且新舊兩版讀的特徵維度不同，不可能同時存在。
+        "eval_env": {"AICUP_GAME": "cache/rank_mlp_shape/models.pt",
+                     "AICUP_GAME_FEATS": "cache/features.npy,cache/features_opp.npy,"
+                                         "cache/features_shape.npy,"
+                                         "cache/features_shape_opp.npy"},
+        "json": "artifacts/blend_mlpshape.json",
+    },
+    {
         "name": "seq_rankloss",
         "device": "mps",
         "mem_gb": 6.5,

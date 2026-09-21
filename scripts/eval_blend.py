@@ -62,7 +62,11 @@ SEQ = [p for p in os.environ.get(
 # 取代的話等於拿單一模型去比三變體集成的分數——那是不公平的比較，
 # 而且會把「它加進去有沒有幫助」這個真正要問的問題換成另一個問題。
 _extra = [p for p in os.environ.get("AICUP_SEQ_EXTRA", "").split(",") if p]
-FEATS = ["cache/features.npy", "cache/features_opp.npy"]
+FEATS = os.environ.get(
+    "AICUP_FEATS", "cache/features.npy,cache/features_opp.npy").split(",")
+# ⚠️ 單局模型與題目層級模型讀**同一份**特徵庫，所以換其中一個的輸入維度
+# 會讓另一個的輸入層對不上。`AICUP_GAME_FEATS` 只換單局模型那一邊。
+GAME_FEATS = [p for p in os.environ.get("AICUP_GAME_FEATS", "").split(",") if p]
 # 每個 checkpoint 一組序列庫，用 ";" 分隔；只給一組就套用到全部。
 _ss = [g.split(",") for g in os.environ.get(
     "AICUP_SEQ_STORES",
@@ -95,6 +99,11 @@ class Components:
         self._RankMLP, self._qp = RankMLP, question_posteriors
         self._SeqNet, self._SeqStore, self._sp = build_seq_net, SeqStore, seq_posteriors
         self.X, self.ok = open_stores(FEATS)
+        if GAME_FEATS:
+            self.Xg, okg = open_stores(GAME_FEATS)
+            self.okg = self.ok & okg      # 兩份都有效才用，遮罩才對得起來
+        else:
+            self.Xg, self.okg = self.X, self.ok
         self._loaded = {}
 
     def _mlp(self, path):
@@ -112,7 +121,7 @@ class Components:
 
     def game(self, q):
         nets, sc, _ = self._mlp(GAME)
-        return _log(self._qp(nets, sc, self.X, self.ok, q.game_rows, self.dev))
+        return _log(self._qp(nets, sc, self.Xg, self.okg, q.game_rows, self.dev))
 
     def question(self, q):
         nets, sc, _ = self._mlp(QUESTION)
