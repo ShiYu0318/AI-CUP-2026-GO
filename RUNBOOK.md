@@ -40,10 +40,18 @@
 
 ```bash
 # 1. 解壓官方測試集到 tests/（下面假設路徑是 tests/）
-# 2. 產生兩份提交檔
+# 2. 先檢查依賴齊不齊（10 秒，離開碼 0 = 全部就緒）
+python3 scripts/predict.py --check --test-dir tests
+# 3. 產生兩份提交檔
 python3 scripts/predict.py --test-dir tests --out-dir .
-# 3. 上傳 submission_rank.csv 與 submission_player.csv
+# 4. 上傳 submission_rank.csv 與 submission_player.csv
 ```
+
+⚠️ **第 2 步不要跳過。** `predict.py` 對缺檔案的反應是**靜默降級**——
+少一個序列變體就少 13 維 stacker 特徵、少了度量模型就退回無學習基準，
+但它不會報錯，你會交出一份分數較低的檔案而完全不知道。
+`--check` 會把 24 項依賴逐一列出來（包含每個 checkpoint 從自己的 args
+推導出來的序列庫），缺什麼一目了然。
 
 `predict.py` 會自己做完整的格式驗證（800 列、Top-5 相異、無跨池汙染），
 驗證不過會直接拋錯，不會產生一份看起來正常但會被判無效的檔案。

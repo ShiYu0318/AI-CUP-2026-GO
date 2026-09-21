@@ -467,6 +467,69 @@ def _fit_rank_model(cache_path: str, train_per_rank: int):
     return model
 
 
+def check_artifacts(args) -> int:
+    """把「靜默降級」變成明確的報告。
+
+    `predict.py` 對缺檔案的反應是**安靜地少用一個成分**——
+    在比賽當天，那代表你會交出一份分數較低的提交檔而完全不知道。
+    這個模式在推論前先把所有依賴列出來，缺什麼一目了然。
+
+    回傳 0 = 全部就緒；1 = 有東西缺。
+    """
+    from aicup.planes import n_planes                      # noqa: F401  (確認可 import)
+
+    rows: list[tuple[str, str, bool, str]] = []
+
+    def add(group, path, why):
+        rows.append((group, path, os.path.exists(path), why))
+
+    add("競賽二 單局", args.rank_mlp, "缺了就退回無學習基準，分數掉一大截")
+    add("競賽二 題目層級", args.rank_question, "缺了就少一個 stacker 成分")
+    for i, sp in enumerate(args.rank_seq or []):
+        add("競賽二 序列", sp, f"第 {i + 1} 個變體；少一個就少 13 維 stacker 特徵")
+        ck_dir = os.path.dirname(sp)
+        if os.path.exists(sp):
+            try:
+                import torch
+                a = torch.load(sp, map_location="cpu", weights_only=False)["args"]
+                for st in _store_paths(_views_of(a)):
+                    add("　└ 它需要的序列庫", st, f"{os.path.basename(ck_dir)} 的輸入")
+            except Exception as e:                          # noqa: BLE001
+                rows.append(("　└ 讀取失敗", sp, False, f"{type(e).__name__}: {e}"))
+    add("競賽一 度量學習", args.feature_metric, "缺了就退回無學習的 PlayerBaseline")
+    if os.path.exists(args.feature_metric):
+        m = _load_metric(args.feature_metric)
+        if m is not None:
+            for st in m[4]:
+                add("　└ 它需要的特徵庫", st, "推論時會即時重算，但維度要對得上")
+    for tg in ("public", "private"):
+        for kind in ("rank_prediction_test", "player_identification_test",
+                     "player_identification_candidates"):
+            add("測試集", os.path.join(args.test_dir, f"{kind}_{tg}.csv"), "官方檔案")
+
+    seen, uniq = set(), []
+    for r in rows:
+        if r[1] in seen:
+            continue
+        seen.add(r[1]); uniq.append(r)
+
+    miss = [r for r in uniq if not r[2]]
+    w = max(len(r[1]) for r in uniq) + 2
+    print("=" * 60)
+    print("依賴檢查")
+    print("=" * 60)
+    for group, path, ok, why in uniq:
+        print(f"  {'✅' if ok else '❌'} {group:<16}{path:<{w}}" + ("" if ok else why))
+    print("=" * 60)
+    if miss:
+        print(f"**缺少 {len(miss)} 項。** `predict.py` 不會報錯——"
+              f"它會安靜地少用那些成分，交出一份分數較低的檔案。")
+        print("產生方式見 RUNBOOK.md 的「事前必須就緒的東西」。")
+        return 1
+    print(f"全部 {len(uniq)} 項就緒，可以跑 `python3 scripts/predict.py`。")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--test-dir", default="mock_tests")
@@ -503,6 +566,10 @@ def main() -> int:
                          "伺服器把你配對給實力相近的人，對手的表現反映配對分級，"
                          "而分級反映你的穩定實力。實測 +0.0491±0.0232（6/6 勝，t=5.19）。"
                          "⚠️ 給了這個就會在測試集上多抽一次特徵，時間加倍")
+    ap.add_argument("--check", action="store_true",
+                    help="只檢查依賴是否齊全就結束，不做推論。"
+                         "比賽當天第一個該跑的東西——`predict.py` 對缺檔案是"
+                         "**靜默降級**，這個模式把它變成明確的清單")
     ap.add_argument("--crosstask", action="store_true",
                     help="**跨子題證據轉移**：先用競賽一認出每道棋力題是哪位候選人，"
                          "再用那位候選人的 100 譜增強棋力預測。"
@@ -581,6 +648,9 @@ def main() -> int:
                     help="解碼方式。實測（5 次獨立切分）：最佳化切點 0.4336±0.0032 > "
                          "期望分數解碼 0.3921±0.0099 > argmax 0.3886±0.0086")
     args = ap.parse_args()
+
+    if args.check:
+        return check_artifacts(args)
 
     os.makedirs(args.out_dir, exist_ok=True)
     answers = {"rank": {}, "player": {}}
