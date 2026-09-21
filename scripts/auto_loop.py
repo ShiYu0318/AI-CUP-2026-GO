@@ -190,14 +190,22 @@ EXPERIMENTS = [
                                          "cache/features_shape_opp.npy"},
         "json": "artifacts/blend_mlpshape.json",
     },
+    # ⛔ 2026-09-21：跑失敗且**不打算修**，留著是為了記錄原因。
+    #    失敗本身是維度不合：`--game-model rank_mlp_opp_big` 是用 1178 維訓練的，
+    #    這裡卻餵 1274 維 → ValueError: shapes (15,1274) (1178,)。
+    #    修法是改用 `rank_mlp_shape`，但那會讓題目層級模型依賴一個
+    #    **我們不會上線的**單局模型（mlp_shape 只有 +0.0011，沒過門檻）。
+    #    而且期望值本來就低：棋形對單局 MLP 只值 +0.0011，
+    #    因為 stacker 已經透過 seq_shape 拿到同樣的資訊了（RESULTS.md §2.21）。
+    #    題目層級模型讀的是同一份特徵，幾乎必然同樣冗餘。
     {
         "name": "question_shape",
         "device": "cpu",
         "mem_gb": 6.0,
-        "why": "題目層級模型也讀同一份手工特徵，同樣缺手法類別。"
-               "它只有 20 分鐘，值得跟 mlp_shape 一起測——"
-               "但要注意兩者**不能**同時換：stacker 裡是兩個獨立成分，"
-               "一次換一個才知道增益是誰帶來的",
+        "skip": True,
+        "why": "（已跳過）題目層級模型讀同一份手工特徵，"
+               "而棋形對單局 MLP 只值 +0.0011——資訊已被 seq_shape 抓走，"
+               "這裡幾乎必然同樣冗餘。詳見上方註解",
         "train": ["python3", "scripts/train_rank_question.py",
                   "--extra-features", "cache/features_opp.npy",
                   "cache/features_shape.npy", "cache/features_shape_opp.npy",
@@ -398,7 +406,8 @@ def main() -> int:
     st = load_state()
     queue = [e for e in EXPERIMENTS
              if (args.only is None or e["name"] in args.only)
-             and e["name"] not in st["done"]]
+             and e["name"] not in st["done"]
+             and not e.get("skip")]        # skip=True 的留在檔案裡只為了記錄原因
 
     if args.dry_run:
         log(f"佇列 {len(queue)} 項，門檻 {args.floor:+.3f}，"
