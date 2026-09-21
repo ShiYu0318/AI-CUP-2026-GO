@@ -159,6 +159,32 @@ EXPERIMENTS = [
         "json": "artifacts/blend_mlpshape.json",
     },
     {
+        "name": "question_shape",
+        "device": "cpu",
+        "mem_gb": 6.0,
+        "why": "題目層級模型也讀同一份手工特徵，同樣缺手法類別。"
+               "它只有 20 分鐘，值得跟 mlp_shape 一起測——"
+               "但要注意兩者**不能**同時換：stacker 裡是兩個獨立成分，"
+               "一次換一個才知道增益是誰帶來的",
+        "train": ["python3", "scripts/train_rank_question.py",
+                  "--extra-features", "cache/features_opp.npy",
+                  "cache/features_shape.npy", "cache/features_shape_opp.npy",
+                  "--game-model", "cache/rank_mlp_opp_big/models.pt",
+                  "--seeds", "3", "--device", "cpu",
+                  "--out", "cache/rank_question_shape"],
+        "produces": "cache/rank_question_shape/models.pt",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+                 "--json-out", "artifacts/blend_qshape.json"],
+        # AICUP_FEATS 換題目層級那一邊；AICUP_GAME_FEATS 明確釘回原本的，
+        # 免得單局模型也跟著換掉（那樣就分不清增益是誰的）。
+        "eval_env": {"AICUP_QUESTION": "cache/rank_question_shape/models.pt",
+                     "AICUP_FEATS": "cache/features.npy,cache/features_opp.npy,"
+                                    "cache/features_shape.npy,"
+                                    "cache/features_shape_opp.npy",
+                     "AICUP_GAME_FEATS": "cache/features.npy,cache/features_opp.npy"},
+        "json": "artifacts/blend_qshape.json",
+    },
+    {
         "name": "seq_rankloss",
         "device": "mps",
         "mem_gb": 6.5,
