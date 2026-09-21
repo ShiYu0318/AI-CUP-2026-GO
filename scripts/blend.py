@@ -37,7 +37,7 @@ from aicup.benchmark import build_player_pool, build_rank_questions  # noqa: E40
 from aicup.baselines import PlayerBaseline, RankBaseline         # noqa: E402
 from aicup.dataset import SgfCache                               # noqa: E402
 from aicup.nets import MultiTaskGoNet                            # noqa: E402
-from aicup.planes import game_planes                             # noqa: E402
+from aicup.planes import game_planes, planes_to_float           # noqa: E402
 from aicup.scoring import (retrieval_report, decode_expected_score,   # noqa: E402
                            rank_final_score, apply_temperature, fit_temperature)
 
@@ -69,7 +69,7 @@ def deep_embed(net, meta, cache, rows, device, n_snapshots: int, batch: int = 64
         t = game_planes(cache.get(int(rec["file_idx"]), int(rec["row"])),
                         rec["color"], n_snapshots=n_snapshots)
         if t is None: continue
-        buf.append(t.mean(axis=0))
+        buf.append(planes_to_float(t).mean(axis=0))
         if len(buf) >= batch: flush()
     flush()
     return np.concatenate(out) if out else np.zeros((0, 1), np.float32)
@@ -155,7 +155,7 @@ def blend_rank(args, meta, split, X, ok, device):
                 t = game_planes(cache.get(int(rec["file_idx"]), int(rec["row"])),
                                 rec["color"], n_snapshots=args.snapshots)
                 if t is not None:
-                    planes.append(t.mean(axis=0))
+                    planes.append(planes_to_float(t).mean(axis=0))
             if not planes:
                 Pd.append(np.full(10, 0.1)); continue
             x = torch.from_numpy(np.stack(planes)).float().to(device)

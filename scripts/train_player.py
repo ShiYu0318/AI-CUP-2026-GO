@@ -38,7 +38,7 @@ from aicup.benchmark import build_player_pool                  # noqa: E402
 from aicup.dataset import GameDataset, PKPlayerSampler         # noqa: E402
 from aicup.losses import SubCenterArcFace, batch_hard_triplet_loss  # noqa: E402
 from aicup.nets import MultiTaskGoNet, count_parameters        # noqa: E402
-from aicup.planes import game_planes                           # noqa: E402
+from aicup.planes import game_planes, planes_to_float          # noqa: E402
 from aicup.scoring import retrieval_report                     # noqa: E402
 
 
@@ -72,7 +72,7 @@ def embed_games(model, meta, cache, rows, device, n_snapshots: int, batch: int =
                         rec["color"], n_snapshots=n_snapshots)
         if t is None:
             continue
-        buf.append(t.mean(axis=0))          # 一局的多個 snapshot 先平均
+        buf.append(planes_to_float(t).mean(axis=0))          # 一局的多個 snapshot 先平均
         if len(buf) >= batch:
             flush()
     flush()

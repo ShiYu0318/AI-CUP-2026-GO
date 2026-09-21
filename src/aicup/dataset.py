@@ -21,7 +21,7 @@ import torch
 from torch.utils.data import Dataset, Sampler
 
 from .data import training_files
-from .planes import game_planes
+from .planes import game_planes, planes_to_float
 
 
 class SgfCache:
@@ -86,7 +86,9 @@ class GameDataset(Dataset):
             t = np.zeros((1, 34, 19, 19), dtype=np.uint8)
         if self.augment:
             t = _dihedral(t, int(np.random.randint(8)))
-        item = (torch.from_numpy(t.astype(np.float32)),
+        # ⚠️ 一律走 planes_to_float，不要自己 astype——
+        # 手數進度那一層是 0~255，直接轉型會讓它的尺度是其他層的 255 倍。
+        item = (torch.from_numpy(planes_to_float(t)),
                 int(rec["rank_id"]),
                 int(self.player_to_label.get(rec["player_id"], -1)))
         if self.quality_store is None:
@@ -148,7 +150,7 @@ class QuestionDataset(Dataset):
             sgf = self.cache.get(int(rec["file_idx"]), int(rec["row"]))
             t = game_planes(sgf, rec["color"], n_snapshots=self.n_snapshots)
             if t is not None:
-                tensors.append(t.mean(axis=0, dtype=np.float32))
+                tensors.append(planes_to_float(t).mean(axis=0))
         if not tensors:
             tensors = [np.zeros((34, 19, 19), dtype=np.float32)]
         x = np.stack(tensors)

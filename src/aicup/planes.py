@@ -45,6 +45,32 @@ def n_planes(n_history: int = N_HISTORY, buckets: int = LIBERTY_BUCKETS,
     return 3 + 2 * n_history + 2 * buckets + n_last + 3
 
 
+def progress_plane(n_history: int = N_HISTORY, buckets: int = LIBERTY_BUCKETS,
+                   n_last: int = N_LAST_MOVES) -> int:
+    """「手數進度」那一層的索引。它是**唯一**被量化到 0~255 的通道。"""
+    return 3 + 2 * n_history + 2 * buckets + n_last + 1
+
+
+def planes_to_float(t, n_history: int = N_HISTORY, buckets: int = LIBERTY_BUCKETS,
+                    n_last: int = N_LAST_MOVES) -> np.ndarray:
+    """uint8 板面 → float32，並把手數進度那一層除回 [0, 1]。
+
+    ⚠️ **每一個消費端都必須經過這裡。**
+    `game_planes` 為了省記憶體回傳 uint8，其中手數進度量化成 0~255；
+    其餘 33 層都是 0/1。若直接 `.float()` 餵進網路，
+    等於有一層的尺度是其他層的 **255 倍**——實測後果是
+    rank 損失卡在 ln(10)=2.303、題目分數停在隨機水準（0.19），
+    而且**沒有任何錯誤訊息**，看起來只像「模型學不起來」。
+
+    這個函式存在的理由就是「別處不要自己寫 .float()」。
+    """
+    a = np.asarray(t, dtype=np.float32)
+    idx = progress_plane(n_history, buckets, n_last)
+    if a.shape[-3] > idx:
+        a[..., idx, :, :] /= 255.0
+    return a
+
+
 def _snapshot_indices(n_moves: int, n_snapshots: int, min_move: int = 20) -> np.ndarray:
     """在整局中均勻取樣 n_snapshots 個手序（含開局與終局）。"""
     if n_moves <= min_move:
@@ -114,7 +140,9 @@ def game_planes(sgf: str, color: str | int, *, n_snapshots: int = 8,
 
         base += n_last
         p[base] = 1 if my == BLACK else 0
-        p[base + 1] = int(round(255 * (i + 1) / n))   # 手數進度，量化到 uint8
+        # 手數進度量化到 uint8（省記憶體）。**讀取端必須用 `planes_to_float`
+        # 除回 [0,1]**，否則這一層的尺度是其他層的 255 倍。
+        p[base + 1] = int(round(255 * (i + 1) / n))
         p[base + 2] = 1
         out.append(p)
 

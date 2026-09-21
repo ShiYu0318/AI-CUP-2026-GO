@@ -161,13 +161,14 @@ class Components:
         if key not in self._loaded:
             from aicup.dataset import SgfCache
             from aicup.nets import load_gonet
-            from aicup.planes import game_planes
+            from aicup.planes import game_planes, planes_to_float
             ck = torch.load(ckpt, map_location=self.dev, weights_only=False)
             net = load_gonet(ck["model"], ck.get("config"))
             net.eval().to(self.dev)
             nsnap = int(ck["args"].get("snapshots", 4))
-            self._loaded[key] = (net, SgfCache(), game_planes, nsnap)
-        net, cache, game_planes, nsnap = self._loaded[key]
+            self._loaded[key] = (net, SgfCache(), game_planes, nsnap,
+                                 planes_to_float)
+        net, cache, game_planes, nsnap, planes_to_float = self._loaded[key]
         if self._meta is None:
             self._meta = load_metadata()
         meta = self._meta
@@ -181,7 +182,7 @@ class Components:
                     t = game_planes(cache.get(int(rec["file_idx"]), int(rec["row"])),
                                     rec["color"], n_snapshots=nsnap)
                     if t is not None:
-                        planes.append(t.mean(axis=0))
+                        planes.append(planes_to_float(t).mean(axis=0))
                 if not planes:
                     out.append(np.full(10, 0.1)); continue
                 x = torch.from_numpy(np.stack(planes)).float().to(self.dev)[None]
