@@ -73,6 +73,20 @@ STATE = "artifacts/auto_loop_state.json"
 LEDGER = "RESULTS.md"
 FLOOR = 0.005          # 小於這個增益不算贏（seed 間標準差約 ±0.010）
 
+# 兩個子題各有自己的生產基準與 baseline。
+# ⚠️ 0.9389（競賽一）與 0.5782（競賽二）不能放在同一個欄位比較——
+# 混在一起的話，一個競賽一的實驗會拿 0.94 去比 0.58 而「大勝」。
+TRACKS = {
+    "rank":   {"baseline": 0.4631, "name": "競賽二 棋力",
+               "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+                        "--splits", "5", "--json-out", "artifacts/blend_default.json"],
+               "json": "artifacts/blend_default.json"},
+    "player": {"baseline": 0.2845, "name": "競賽一 身分",
+               "eval": ["python3", "scripts/eval_player.py", "--seeds", "3",
+                        "--json-out", "artifacts/player_baseline.json"],
+               "json": "artifacts/player_baseline.json"},
+}
+
 # gate 的「尺」的版本。**改動 gate 的定義時一定要 +1。**
 # 這不是裝飾：state 裡的 production 是用舊尺量的，換尺卻沿用舊數字，
 # 下一個實驗就會拿新尺的分數去比舊尺的基準，**假性通過**。
@@ -83,7 +97,8 @@ FLOOR = 0.005          # 小於這個增益不算贏（seed 間標準差約 ±0.
 #   3  gate 改為「候選 + 現有三變體集成」——單獨比 base 會系統性拒絕好的集成成員
 #   4  每組題目改用 5 種校準/評分切分取平均——seed 層級標準差 ±0.0102 → ±0.0060，
 #      統計力接近翻倍而成本幾乎為零（後驗是共用且快取的）
-GATE_VERSION = 4
+#   5  production 改成**分軌**（競賽一/競賽二各一個），迴圈不再只能改進競賽二
+GATE_VERSION = 5
 BASELINE = 0.4631      # 官方 baseline（競賽二）
 
 
@@ -226,6 +241,30 @@ EXPERIMENTS = [
         "json": "artifacts/blend_seqgrushape.json",
     },
     {
+        "name": "metric_shape",
+        "track": "player",
+        "device": "cpu",
+        "mem_gb": 6.0,
+        "why": "**競賽一也可能吃得到棋形**。手法偏好（接／尖／跳／飛／象步）"
+               "本質上是**個人簽名**——帳本裡最強的身分特徵『開局順序族』就是同一類東西。"
+               "而競賽一目前 0.9599、最壞組成 dan_only 0.9389，"
+               "愈接近天花板、每 0.01 能拉開的名次愈多。"
+               "⚠️ 這是迴圈第一個競賽一的實驗，gate 走 eval_player.py（最壞組成）",
+        "train": ["python3", "scripts/train_feature_metric.py",
+                  "--extra-features", "cache/features_opp.npy",
+                  "cache/features_shape.npy", "cache/features_shape_opp.npy",
+                  "--seeds", "3", "--device", "cpu",
+                  "--out", "cache/feature_metric_shape"],
+        "produces": "cache/feature_metric_shape/models.pt",
+        "eval": ["python3", "scripts/eval_player.py", "--seeds", "3",
+                 "--json-out", "artifacts/player_shape.json"],
+        "eval_env": {"AICUP_METRIC": "cache/feature_metric_shape/models.pt",
+                     "AICUP_PLAYER_FEATS": "cache/features.npy,cache/features_opp.npy,"
+                                           "cache/features_shape.npy,"
+                                           "cache/features_shape_opp.npy"},
+        "json": "artifacts/player_shape.json",
+    },
+    {
         "name": "seq_gru",
         "device": "cpu",
         "mem_gb": 5.0,
@@ -260,10 +299,12 @@ def load_state() -> dict:
             log(f"gate 版本 {st.get('gate_version')} → {GATE_VERSION}，"
                 f"舊的生產分數 {st.get('production')} 是用**舊的尺**量的，已作廢，"
                 f"將重新量一次基準")
-            st["production"] = None
+            st["production"] = {}
             st["gate_version"] = GATE_VERSION
+        if not isinstance(st.get("production"), dict):
+            st["production"] = {}          # 舊格式是單一浮點數
         return st
-    return {"production": None, "done": {}, "gate_version": GATE_VERSION}
+    return {"production": {}, "done": {}, "gate_version": GATE_VERSION}
 
 
 def save_state(st: dict) -> None:
@@ -432,7 +473,8 @@ def main() -> int:
                 save_state(st); continue
             with open(os.path.join(ROOT, exp["json"])) as f:
                 res = json.load(f)
-            score, prod = res["best_score"], st["production"]
+            tr = exp.get("track", "rank")
+            score, prod = res["best_score"], st["production"][tr]
             gain = score - prod
             won = gain >= args.floor
             verdict = "採用" if won else ("增益低於門檻" if gain > 0 else "無增益")
@@ -444,7 +486,7 @@ def main() -> int:
             record(exp, score, prod, verdict, detail)
             st["done"][exp["name"]] = {"score": score, "gain": gain, "won": won}
             if won:
-                st["production"] = score
+                st["production"][tr] = score
             save_state(st)
             git_commit(f"exp: {exp['name']} scores {score:.4f} ({verdict})")
             continue
@@ -453,8 +495,10 @@ def main() -> int:
             time.sleep(20)
 
     log("=" * 62)
-    log(f"佇列跑完。生產分數 {st['production']:.4f}"
-        f"（官方 baseline {BASELINE}，{st['production'] / BASELINE:.2f}×）")
+    log("佇列跑完。")
+    for tr, v in sorted(st["production"].items()):
+        b = TRACKS[tr]["baseline"]
+        log(f"  {TRACKS[tr]['name']}：{v:.4f}（官方 baseline {b}，{v / b:.2f}×）")
     won = [k for k, v in st["done"].items() if v.get("won")]
     log(f"通過 gate 的實驗：{won or '無'}")
     if won:
