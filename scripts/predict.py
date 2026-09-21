@@ -40,6 +40,119 @@ MAX_GAMES = 20
 CROSSTASK_GALLERY = 100      # 官方候選庫是「400 人各 100 譜」
 
 
+def _load_metric(path: str):
+    """載入競賽一的度量學習模型。競賽一與跨子題增強共用同一份。"""
+    if not path or not os.path.exists(path):
+        return None
+    import torch
+    from aicup.feature_metric import FeatureEmbedder, FeatureScaler
+    dev = torch.device("cuda" if torch.cuda.is_available() else
+                       "mps" if torch.backends.mps.is_available() else "cpu")
+    ck = torch.load(path, map_location=dev, weights_only=False)
+    a = ck["args"]
+    scaler = FeatureScaler().load_state_dict(ck["scaler"])
+    models = []
+    for sd in ck["models"]:
+        m = FeatureEmbedder(len(scaler.mu), embed_dim=a["embed_dim"], hidden=a["hidden"])
+        m.load_state_dict(sd); m.eval().to(dev)
+        models.append(m)
+    return models, scaler, dev, ck.get("cols")
+
+
+def _crosstask_games(tag: str, feats, args, metric):
+    """把每道棋力題配對到競賽一的候選人，回傳那位候選人的棋局（扁平清單）。
+
+    ⚠️ **判準不過就回傳 None**，而且判準看的是 **Sinkhorn 之前**的 top-1 相異率。
+    Sinkhorn 會強制產生近乎完美的一一對應，**不管真正的答案在不在候選庫裡**——
+    套用之後的信心對「全部配對」與「全部配錯」長得一模一樣
+    （實測全錯時 margin 中位數 0.64、p90 0.9956）。
+    用被污染的訊號當安全門檻，比沒有門檻更危險。
+
+    實測（RESULTS.md §2.20）：
+        假設成立   Sinkhorn 前相異率 0.9075，增強 **+0.0586**
+        假設不成立 Sinkhorn 前相異率 0.5117，增強 **−0.1993**
+    """
+    if metric is None:
+        print("  跨子題增強：沒有度量學習模型，略過", flush=True)
+        return None
+    path = os.path.join(args.test_dir,
+                        f"player_identification_candidates_{tag}.csv")
+    if not os.path.exists(path):
+        print(f"  跨子題增強：找不到 {path}，略過", flush=True)
+        return None
+
+    import numpy as _np
+    from aicup.feature_metric import embed_features, player_template
+    from aicup.rerank import bijection_consistency, sinkhorn_assignment
+
+    models, scaler, mdev, cols = metric
+    cand = pd.read_csv(path)
+    Xc, okc = parallel_batch_features(cand["sgf_content"].tolist(),
+                                      cand["color"].tolist())
+    n_own = Xc.shape[1]
+    if cols is not None and max(cols) >= n_own:
+        print("  跨子題增強：這個度量模型是用多份特徵庫訓練的，"
+              "目前的跨子題路徑只支援我方單視角——略過", flush=True)
+        return None
+
+    def tpl(A):
+        A = _np.asarray(A)
+        if cols is not None:
+            A = A[:, cols]
+        v = _np.concatenate([player_template(embed_features(m, scaler, A, mdev))
+                             for m in models])
+        return v / max(float(_np.linalg.norm(v)), 1e-8)
+
+    names = sorted(cand["player_id"].unique())
+    pid = cand["player_id"].to_numpy()
+    rows_by_name = {n: _np.flatnonzero(okc & (pid == n)) for n in names}
+
+    # 獨立且**definitive** 的判準：棋譜字串直接重疊。
+    # 若主辦方是從同一份測試資料衍生兩個子題，棋力題的棋譜會原封不動
+    # 出現在候選庫裡。這個訊號比 embedding 強得多，而且零成本。
+    _rp = os.path.join(args.test_dir, f"rank_prediction_test_{tag}.csv")
+    overlap = 0.0
+    if os.path.exists(_rp):
+        _rk = pd.read_csv(_rp)
+        _rs = set()
+        for c in [c for c in _rk.columns if c.startswith("sgf_")]:
+            _rs |= set(_rk[c].dropna().astype(str))
+        _rs.discard("")
+        if _rs:
+            overlap = len(_rs & set(cand["sgf_content"].astype(str))) / len(_rs)
+    G = _np.stack([tpl(Xc[rows_by_name[n]]) for n in names])
+    # 棋力題的特徵可能含對手視角（1178 維），度量模型只吃我方 589 維
+    Q = _np.stack([tpl(f[:, :n_own]) if len(f) else _np.zeros(G.shape[1])
+                   for f in feats])
+    raw = Q @ G.T
+    bij = bijection_consistency(raw)
+    thr = args.crosstask_min_bijection
+    if overlap >= 0.5:
+        print(f"  跨子題增強：棋譜字串有 {overlap:.1%} 直接重疊——"
+              f"兩個子題出自同一份測試資料，判準直接通過"
+              f"（embedding 相異率 {bij:.3f} 僅供參考）", flush=True)
+    elif bij < thr:
+        print(f"  跨子題增強：**不套用**——Sinkhorn 前的 top-1 相異率 "
+              f"{bij:.3f} < {thr}。兩個子題看起來不是同一批玩家，"
+              f"硬套的話是把別人的棋局當成強證據（實測 −0.1993）", flush=True)
+        return None
+
+    sim = (sinkhorn_assignment(raw, eps=args.sinkhorn) if args.sinkhorn > 0 else raw)
+    top1 = sim.argmax(axis=1)
+    sgfs = cand["sgf_content"].to_numpy()
+    cols_ = cand["color"].to_numpy()
+    fsgf, fcol, sizes = [], [], []
+    for j in top1:
+        idx = rows_by_name[names[int(j)]][:CROSSTASK_GALLERY]
+        fsgf.extend(sgfs[idx].tolist())
+        fcol.extend(cols_[idx].tolist())
+        sizes.append(len(idx))
+    print(f"  跨子題增強：**套用**——Sinkhorn 前的 top-1 相異率 {bij:.3f} ≥ {thr}，"
+          f"每題改用配對到的候選人的 {int(_np.mean(sizes))} 盤"
+          f"（混合權重 {args.crosstask_weight}）", flush=True)
+    return fsgf, fcol, sizes
+
+
 def _question_features(df: pd.DataFrame, with_opponent: bool = False):
     """把一份題目檔轉成 [每題的特徵矩陣]。
 
@@ -328,9 +441,14 @@ def main() -> int:
                          "——所以內建偵測器，判準不過就自動不套用。預設關閉")
     ap.add_argument("--crosstask-weight", type=float, default=1.0,
                     help="增強的混合權重。1.0 = 全用配對到的 100 盤（假設成立時最好）")
-    ap.add_argument("--crosstask-min-bijection", type=float, default=0.70,
+    ap.add_argument("--crosstask-min-bijection", type=float, default=0.85,
                     help="套用的門檻：**Sinkhorn 之前**的 top-1 相異率。"
-                         "實測假設成立 0.9075、不成立 0.5117。"
+                         "實測假設成立 0.9075、完全不成立 0.5117。"
+                         "0.85 不是取中間值——設 f 為查詢玩家真的在候選庫裡的比例，"
+                         "由兩個量測點線性內插得 相異率 ≈ 0.512 + 0.396f；"
+                         "而淨增益 f×0.0586 + (1−f)×(−0.1993) 的零點在 f=77%。"
+                         "門檻 0.70 對應 f=47.5%，會在 f∈[48%, 77%] 這段**放行但虧損**。"
+                         "0.85 對應 f≈85%，留了安全邊際。"
                          "⚠️ 一定要看 Sinkhorn 之前的——Sinkhorn 會強制一一對應，"
                          "之後的信心對兩種情境長得一模一樣")
     ap.add_argument("--calib-prior", default="natural",
@@ -347,20 +465,21 @@ def main() -> int:
     ap.add_argument("--rank-seq", nargs="*",
                     default=["cache/rank_seq_opp/models.pt",
                              "cache/rank_seq_opp_full/models.pt",
-                             "cache/rank_seq_w192/models.pt"],
+                             "cache/rank_seq_w192/models.pt",
+                             "cache/rank_seq_shape/models.pt"],
                     help="競賽二的逐手序列模型（dilated 1D-CNN）。"
                          "589 維是整局的統計摘要，看不到『愚形出現在第 30 手還是第 150 手』。"
-                         "雙視角（我方 12 維 + 對手 12 維 = 24 維/手）。"
-                         "**預設是三個變體的集成**：基準（40 萬局 w128）、"
-                         "全量（78 萬局 w128）、加寬（40 萬局 w192）。"
-                         "三者個別相對單一模型只有 +0.004~0.006（都低於 0.005 門檻），"
-                         "但誤差來源不同（資料量 vs 容量），合起來 "
-                         "0.5703 → 0.5782（+0.0079，8/8 勝，t=9.15）。"
+                         "**預設是四個變體的集成**，每個變體用**自己的**序列庫"
+                         "（由它 checkpoint 裡的 args 自動推導，見 SEQ_VIEWS）：\n"
+                         "  base / full / w192  雙視角 24 維/手"
+                         "（我方 12 + 對手 12），差在資料量與容量；\n"
+                         "  shape               四視角 48 維/手（再加上棋形 12×2）。\n"
+                         "前三個個別相對單一模型只有 +0.004~0.006（都低於門檻），"
+                         "但誤差來源不同，合起來 0.5703 → 0.5782（+0.0079，8/8，t=9.15）。"
+                         "加上 shape 之後 **0.5782 → 0.5889**（+0.0063，7/8，t=3.73）"
+                         "——而且它是唯一**帶新資訊**的成員：換架構（GRU）、換寬度、"
+                         "換視窗全都加不了東西（RESULTS.md §2.19）。"
                          "給空清單則停用序列成分")
-    ap.add_argument("--extra-sequences", nargs="*",
-                    default=["cache/sequences_opp.npy"],
-                    help="序列模型的額外視角，必須與訓練時一致。"
-                         "給了這個就會在測試集上多抽一次序列（時間加倍）")
     ap.add_argument("--seq-weight", type=float, default=0.7,
                     help="序列模型的融合權重。8 組 player-disjoint 掃過 0.35~0.9，"
                          "峰值在 0.7（0.5639±0.0104，+0.0237，8/8 勝，t=15.09），"
@@ -457,6 +576,26 @@ def main() -> int:
                                                   args.train_per_rank)
 
     # 切點與溫度都在「held-out 玩家的模擬題目」上校準，與測試集完全無關
+    # ⚠️ 跨子題的判定必須在**校準之前**做完。
+    # 若校準做了增強、推論卻因為判準不過而沒做，切點就配在錯的分布上——
+    # 那比完全不做增強還糟，而且不會有任何錯誤訊息。
+    metric_ct = _load_metric(args.feature_metric) if args.crosstask else None
+    ct_plan: dict = {}
+    if args.crosstask:
+        for _tg in ("public", "private"):
+            _pth = os.path.join(args.test_dir, f"rank_prediction_test_{_tg}.csv")
+            if not os.path.exists(_pth):
+                continue
+            _dft = pd.read_csv(_pth)
+            _fs0, _fc0, _fz0 = _flatten_questions(_dft)
+            _own = _features_from_flat(_fs0, _fc0, _fz0, with_opponent=False)
+            ct_plan[_tg] = _crosstask_games(_tg, _own, args, metric_ct)
+        if not ct_plan or any(v is None for v in ct_plan.values()):
+            print("  跨子題增強：至少一個測試池沒通過判準 → **兩池都不套用**"
+                  "（校準只有一份，兩池必須用同一種證據結構）", flush=True)
+            ct_plan = {}
+    args._crosstask_active = bool(ct_plan)
+
     calib = None
     if args.decode == "threshold":
         from aicup.data import make_player_split as _mps
@@ -518,7 +657,7 @@ def main() -> int:
             return parts, lo
 
         _parts, _lo = _calib_parts(_q.game_rows)
-        if args.crosstask:
+        if args._crosstask_active:
             # 校準也必須用**增強後**的證據，否則切點是配在 5~20 盤的期望等級
             # 分布上，而推論時的分布會因為多了 100 盤而變銳——切點就錯位了。
             # 這裡假設配對正確（實測 top-1 0.949），用同一位玩家的其他棋局。
@@ -562,50 +701,71 @@ def main() -> int:
         path = os.path.join(args.test_dir, f"rank_prediction_test_{tag}.csv")
         df = pd.read_csv(path)
         t0 = time.time()
-        feats = _question_features(df, with_opponent=bool(args.extra_features))
-        if rank_mlp:
-            nets, rsc, rdev, _ = rank_mlp
-            for _n in nets:                 # 保險：推論一律 eval（dropout 關閉）
-                _n.eval()
-            import torch as _t
-            from aicup.losses import corn_to_proba as _c2p
-            P = []
-            with _t.no_grad():
-                for A in feats:
-                    if len(A) == 0:
-                        P.append(np.full(10, 0.1)); continue
-                    t = _t.from_numpy(rsc.transform(A)).to(rdev)
-                    ps = []
-                    for n in nets:
-                        lc, lo2 = n(t)
-                        p = _t.softmax(lc, dim=-1).cpu().numpy()
-                        pc = _c2p(lo2).cpu().numpy()
-                        pc = pc / np.maximum(pc.sum(axis=1, keepdims=True), 1e-12)
-                        ps.append(0.5 * p + 0.5 * pc)
-                    p = np.mean(ps, axis=0)
-                    g = np.exp(np.log(np.clip(p, 1e-12, None)).mean(axis=0))
-                    P.append(g / g.sum())
-            P = np.stack(P)
-            parts = {"game": np.log(np.clip(P, 1e-12, None))}
-            if rank_question:
-                parts["question"] = _question_log_posteriors_from_feats(
-                    rank_question, feats)
-                P = np.exp(_blend_question_from_feats(
-                    rank_question, feats, np.log(np.clip(P, 1e-12, None))))
-        else:
-            P = model.question_proba(feats, how=args.aggregation)
-            parts = {"game": np.log(np.clip(P, 1e-12, None))}
-        lo = np.log(np.clip(P, 1e-12, None))
-        if seq_models:
-            from aicup.question_model import blend_log_posteriors as _blp
-            bcache = {}
-            for tag_, nets_, views_ in seq_models:
-                if views_ not in bcache:
-                    bcache[views_] = _question_sequences(df, views_)
-                parts[f"seq_{tag_}"] = np.log(np.clip(
-                    _seq_posteriors_from_blocks(nets_, bcache[views_], seq_dev),
-                    1e-12, None))
-            lo = _blp(lo, parts[f"seq_{seq_models[0][0]}"], w=args.seq_weight)
+        from aicup.question_model import blend_log_posteriors as _blp
+
+        def _infer_parts(fsgf, fcol, fsizes):
+            """一組棋局 → 所有 stacker 成分的 log 後驗（與校準端 `_calib_parts` 對稱）。
+
+            吃扁平清單而不是 DataFrame，因為跨子題增強要對
+            「配對到的候選人的 100 盤」算同樣的東西，
+            而那 100 盤不在題目檔的 sgf_1..sgf_20 欄位裡。
+            """
+            ft = _features_from_flat(fsgf, fcol, fsizes,
+                                     with_opponent=bool(args.extra_features))
+            if rank_mlp:
+                nets, rsc, rdev, _ = rank_mlp
+                for n_ in nets:             # 保險：推論一律 eval（dropout 關閉）
+                    n_.eval()
+                import torch as _t
+                from aicup.losses import corn_to_proba as _c2p
+                Pl = []
+                with _t.no_grad():
+                    for A in ft:
+                        if len(A) == 0:
+                            Pl.append(np.full(10, 0.1)); continue
+                        t = _t.from_numpy(rsc.transform(A)).to(rdev)
+                        ps = []
+                        for n in nets:
+                            lc, lo2 = n(t)
+                            pp = _t.softmax(lc, dim=-1).cpu().numpy()
+                            pc = _c2p(lo2).cpu().numpy()
+                            pc = pc / np.maximum(pc.sum(axis=1, keepdims=True), 1e-12)
+                            ps.append(0.5 * pp + 0.5 * pc)
+                        pp = np.mean(ps, axis=0)
+                        g = np.exp(np.log(np.clip(pp, 1e-12, None)).mean(axis=0))
+                        Pl.append(g / g.sum())
+                Pm = np.stack(Pl)
+                pr = {"game": np.log(np.clip(Pm, 1e-12, None))}
+                if rank_question:
+                    pr["question"] = _question_log_posteriors_from_feats(
+                        rank_question, ft)
+                    Pm = np.exp(_blend_question_from_feats(
+                        rank_question, ft, np.log(np.clip(Pm, 1e-12, None))))
+            else:
+                Pm = model.question_proba(ft, how=args.aggregation)
+                pr = {"game": np.log(np.clip(Pm, 1e-12, None))}
+            lo_ = np.log(np.clip(Pm, 1e-12, None))
+            if seq_models:
+                bc = {}
+                for tag_, nets_, views_ in seq_models:
+                    if views_ not in bc:
+                        bc[views_] = _sequences_from_flat(fsgf, fcol, fsizes, views_)
+                    pr[f"seq_{tag_}"] = np.log(np.clip(
+                        _seq_posteriors_from_blocks(nets_, bc[views_], seq_dev),
+                        1e-12, None))
+                lo_ = _blp(lo_, pr[f"seq_{seq_models[0][0]}"], w=args.seq_weight)
+            return pr, lo_, ft
+
+        _fs, _fc, _fz = _flatten_questions(df)
+        parts, lo, feats = _infer_parts(_fs, _fc, _fz)
+
+        if args._crosstask_active:
+            aug = ct_plan.get(tag)
+            if aug is not None:
+                pa, la, _ = _infer_parts(*aug)
+                w_ = args.crosstask_weight
+                parts = {k: (1 - w_) * v + w_ * pa[k] for k, v in parts.items()}
+                lo = (1 - w_) * lo + w_ * la
         if args.decode == "threshold":
             T, th, stacker = calib
             if stacker is not None:
@@ -635,24 +795,10 @@ def main() -> int:
     print("\n" + "=" * 60, flush=True)
     print("競賽一：玩家辨識", flush=True)
     print("=" * 60, flush=True)
-    metric = None
-    if args.feature_metric and os.path.exists(args.feature_metric):
-        import torch
-        from aicup.feature_metric import FeatureEmbedder, FeatureScaler
-        mdev = torch.device("cuda" if torch.cuda.is_available() else
-                            "mps" if torch.backends.mps.is_available() else "cpu")
-        ck = torch.load(args.feature_metric, map_location=mdev, weights_only=False)
-        a = ck["args"]
-        scaler = FeatureScaler().load_state_dict(ck["scaler"])
-        cols = ck.get("cols")            # 訓練時用的特徵子集，推論必須一致
-        models = []
-        for sd in ck["models"]:
-            m = FeatureEmbedder(len(scaler.mu), embed_dim=a["embed_dim"], hidden=a["hidden"])
-            m.load_state_dict(sd); m.eval().to(mdev)
-            models.append(m)
-        metric = (models, scaler, mdev, cols)
-        print(f"  使用度量學習 embedding（{len(models)} 個模型集成，"
-              f"{len(scaler.mu)} 維輸入，device={mdev}）", flush=True)
+    metric = metric_ct if metric_ct is not None else _load_metric(args.feature_metric)
+    if metric is not None:
+        print(f"  使用度量學習 embedding（{len(metric[0])} 個模型集成，"
+              f"{len(metric[1].mu)} 維輸入，device={metric[2]}）", flush=True)
 
     all_qids, all_top5, all_truth = [], [], []
     for tag in ("public", "private"):
