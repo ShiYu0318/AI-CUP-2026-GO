@@ -543,18 +543,21 @@ def main() -> int:
                     default=["cache/rank_seq_opp/models.pt",
                              "cache/rank_seq_opp_full/models.pt",
                              "cache/rank_seq_w192/models.pt",
-                             "cache/rank_seq_shape/models.pt"],
+                             "cache/rank_seq_shape/models.pt",
+                             "cache/rank_seq_qual/models.pt"],
                     help="競賽二的逐手序列模型（dilated 1D-CNN）。"
                          "589 維是整局的統計摘要，看不到『愚形出現在第 30 手還是第 150 手』。"
                          "**預設是四個變體的集成**，每個變體用**自己的**序列庫"
                          "（由它 checkpoint 裡的 args 自動推導，見 SEQ_VIEWS）：\n"
                          "  base / full / w192  雙視角 24 維/手"
                          "（我方 12 + 對手 12），差在資料量與容量；\n"
-                         "  shape               四視角 48 維/手（再加上棋形 12×2）。\n"
+                         "  shape               四視角 48 維/手（再加上棋形 12×2）；\n"
+                         "  qual                六視角 64 維/手（再加上局面判斷品質 8×2）。\n"
                          "前三個個別相對單一模型只有 +0.004~0.006（都低於門檻），"
                          "但誤差來源不同，合起來 0.5703 → 0.5782（+0.0079，8/8，t=9.15）。"
-                         "加上 shape 之後 **0.5782 → 0.5889**（+0.0063，7/8，t=3.73）"
-                         "——而且它是唯一**帶新資訊**的成員：換架構（GRU）、換寬度、"
+                         "加上 shape 之後 **0.5782 → 0.5889**（+0.0063，7/8，t=3.73）；"
+                         "再加上 qual **0.5892 → 0.5928**（+0.0036，**15/16**，t=5.03，16 seed）。"
+                         "兩個都是**帶新資訊**的成員——換架構（GRU）、換寬度、"
                          "換視窗全都加不了東西（RESULTS.md §2.19）。"
                          "給空清單則停用序列成分")
     ap.add_argument("--seq-weight", type=float, default=0.7,

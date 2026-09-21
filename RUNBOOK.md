@@ -83,6 +83,8 @@ python3 scripts/check_crosstask_link.py --test-dir tests
 | `cache/sequences_opp.npy`（3.8 GB） | `python3 scripts/build_sequence_store.py --nproc 10 --opponent` | 約 8 分 |
 | `cache/seqshape.npy`（3.8 GB） | `python3 scripts/build_sequence_store.py --nproc 10 --shape` | 約 8 分 |
 | `cache/seqshape_opp.npy`（3.8 GB） | `python3 scripts/build_sequence_store.py --nproc 10 --shape --opponent` | 約 8 分 |
+| `cache/seqqual.npy`（2.6 GB） | `python3 scripts/build_sequence_store.py --nproc 10 --quality` | 約 6 分 |
+| `cache/seqqual_opp.npy`（2.6 GB） | `python3 scripts/build_sequence_store.py --nproc 10 --quality --opponent` | 約 6 分 |
 | `cache/features_shape*.npy`（各 192 MB） | `python3 scripts/build_shape_features.py [--opponent]` | 各 20 秒 |
 
 ### 模型層（`predict.py` 的預設就是這些）
@@ -95,9 +97,10 @@ python3 scripts/check_crosstask_link.py --test-dir tests
 | `cache/rank_seq_opp_full/models.pt` | 同上，`--train-games 0 --out cache/rank_seq_opp_full` | 約 2.5 小時 |
 | `cache/rank_seq_w192/models.pt` | 同上，`--width 192 --out cache/rank_seq_w192` | 約 2 小時 |
 | `cache/rank_seq_shape/models.pt` | 同上，額外 `--extra-sequences cache/sequences_opp.npy cache/seqshape.npy cache/seqshape_opp.npy --out cache/rank_seq_shape` | 約 2.8 小時 |
+| `cache/rank_seq_qual/models.pt` | 同上，再加 `cache/seqqual.npy cache/seqqual_opp.npy --out cache/rank_seq_qual` | 約 1.5 小時 |
 | `cache/feature_metric_shape/models.pt` | `python3 scripts/train_feature_metric.py --extra-features cache/features_opp.npy cache/features_shape.npy cache/features_shape_opp.npy --seeds 3 --device cpu --out cache/feature_metric_shape` | 約 10 分 |
 
-**四個**序列變體都要——它們是三個獨立的 stacker 成分，
+**五個**序列變體都要——它們是三個獨立的 stacker 成分，
 少一個 stacker 的特徵維度就對不上（`Stacker.check_parts` 會擋下來並報錯）。
 
 驗證全部就緒：`python3 scripts/predict.py`（會印出離線分數）。
