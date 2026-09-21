@@ -59,6 +59,29 @@ def _load_metric(path: str):
     return models, scaler, dev, ck.get("cols")
 
 
+def crosstask_decision(overlap: float, bijection: float, threshold: float):
+    """要不要套用跨子題增強？回傳 (要不要, 理由)。
+
+    抽成純函式是因為**這是安全關鍵的四行**：比較符號寫反的代價是 −0.1993。
+    兩個獨立判準：
+
+    1. **棋譜字串直接重疊 ≥ 50%** —— definitive。主辦方若是從同一份測試資料
+       衍生兩個子題，棋力題的棋譜會原封不動出現在候選庫裡。
+    2. **Sinkhorn 之前的 top-1 相異率 ≥ threshold** —— 間接但夠用
+       （實測假設成立 0.9075、不成立 0.5117）。
+    """
+    if overlap >= 0.5:
+        return True, (f"棋譜字串有 {overlap:.1%} 直接重疊——兩個子題出自同一份"
+                      f"測試資料，判準直接通過（embedding 相異率 "
+                      f"{bijection:.3f} 僅供參考）")
+    if bijection < threshold:
+        return False, (f"**不套用**——Sinkhorn 前的 top-1 相異率 {bijection:.3f} "
+                       f"< {threshold}。兩個子題看起來不是同一批玩家，"
+                       f"硬套的話是把別人的棋局當成強證據（實測 −0.1993）")
+    return True, (f"**套用**——Sinkhorn 前的 top-1 相異率 {bijection:.3f} "
+                  f"≥ {threshold}")
+
+
 def _crosstask_games(tag: str, feats, args, metric):
     """把每道棋力題配對到競賽一的候選人，回傳那位候選人的棋局（扁平清單）。
 
@@ -127,14 +150,9 @@ def _crosstask_games(tag: str, feats, args, metric):
     raw = Q @ G.T
     bij = bijection_consistency(raw)
     thr = args.crosstask_min_bijection
-    if overlap >= 0.5:
-        print(f"  跨子題增強：棋譜字串有 {overlap:.1%} 直接重疊——"
-              f"兩個子題出自同一份測試資料，判準直接通過"
-              f"（embedding 相異率 {bij:.3f} 僅供參考）", flush=True)
-    elif bij < thr:
-        print(f"  跨子題增強：**不套用**——Sinkhorn 前的 top-1 相異率 "
-              f"{bij:.3f} < {thr}。兩個子題看起來不是同一批玩家，"
-              f"硬套的話是把別人的棋局當成強證據（實測 −0.1993）", flush=True)
+    apply, reason = crosstask_decision(overlap, bij, thr)
+    print(f"  跨子題增強：{reason}", flush=True)
+    if not apply:
         return None
 
     sim = (sinkhorn_assignment(raw, eps=args.sinkhorn) if args.sinkhorn > 0 else raw)
