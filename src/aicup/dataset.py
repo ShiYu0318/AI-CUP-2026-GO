@@ -21,7 +21,8 @@ import torch
 from torch.utils.data import Dataset, Sampler
 
 from .data import training_files
-from .planes import game_planes, planes_to_float
+from .goboard import SIZE
+from .planes import game_planes, n_planes, planes_to_float
 
 
 class SgfCache:
@@ -83,7 +84,11 @@ class GameDataset(Dataset):
         sgf = self.cache.get(int(rec["file_idx"]), int(rec["row"]))
         t = game_planes(sgf, rec["color"], n_snapshots=self.n_snapshots)
         if t is None:
-            t = np.zeros((1, 34, 19, 19), dtype=np.uint8)
+            # ⚠️ snapshot 維度要與正常情況一致。原本寫死 1，
+            # 一旦真的有棋局解析失敗，批次裡就會混進形狀不同的張量。
+            # （目前訓練集沒有這種棋局，所以一直沒被觸發——
+            #   但那是運氣，不是設計。）
+            t = np.zeros((self.n_snapshots, n_planes(), SIZE, SIZE), dtype=np.uint8)
         if self.augment:
             t = _dihedral(t, int(np.random.randint(8)))
         # ⚠️ 一律走 planes_to_float，不要自己 astype——
