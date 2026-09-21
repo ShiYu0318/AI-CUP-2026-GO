@@ -37,6 +37,7 @@ from aicup.submission import (build_rank_submission, build_player_submission,  #
                               write_submission)
 
 MAX_GAMES = 20
+CROSSTASK_GALLERY = 100      # 官方候選庫是「400 人各 100 譜」
 
 
 def _question_features(df: pd.DataFrame, with_opponent: bool = False):
@@ -47,6 +48,12 @@ def _question_features(df: pd.DataFrame, with_opponent: bool = False):
     ⚠️ 有效遮罩取**交集**：任一視角抽取失敗就整局不用，
     否則串接出來的向量會有一半是零而不自知。
     """
+    flat_sgf, flat_col, sizes = _flatten_questions(df)
+    return _features_from_flat(flat_sgf, flat_col, sizes, with_opponent)
+
+
+def _flatten_questions(df: pd.DataFrame):
+    """題目檔 → (扁平的 sgf 清單, 扁平的 color 清單, 每題幾盤)。"""
     sgf_cols = [f"sgf_{i}" for i in range(1, MAX_GAMES + 1)]
     col_cols = [f"color_{i}" for i in range(1, MAX_GAMES + 1)]
     flat_sgf, flat_col, sizes = [], [], []
@@ -57,6 +64,16 @@ def _question_features(df: pd.DataFrame, with_opponent: bool = False):
             if pd.notna(v) and str(v).strip():
                 flat_sgf.append(v); flat_col.append(r[cc]); n += 1
         sizes.append(n)
+    return flat_sgf, flat_col, sizes
+
+
+def _features_from_flat(flat_sgf, flat_col, sizes, with_opponent: bool = False):
+    """扁平清單 → [每題的特徵矩陣]。
+
+    跨子題增強要對「配對到的候選人的 100 盤」算同樣的東西，
+    而那 100 盤不是從題目檔的 sgf_1..sgf_20 欄位來的——
+    所以底層要吃扁平清單，不是 DataFrame。
+    """
     X, ok = parallel_batch_features(flat_sgf, flat_col)
     if with_opponent:
         from aicup.features import normalise_color
@@ -122,16 +139,16 @@ def _question_sequences(df: pd.DataFrame, views) -> list:
     from aicup.moveseq import batch_move_sequences
     from aicup.moveshape import batch_shape_sequences
 
-    sgf_cols = [f"sgf_{i}" for i in range(1, MAX_GAMES + 1)]
-    col_cols = [f"color_{i}" for i in range(1, MAX_GAMES + 1)]
-    flat_sgf, flat_col, sizes = [], [], []
-    for _, r in df.iterrows():
-        n = 0
-        for sc, cc in zip(sgf_cols, col_cols):
-            v = r.get(sc)
-            if pd.notna(v) and str(v).strip():
-                flat_sgf.append(v); flat_col.append(r[cc]); n += 1
-        sizes.append(n)
+    flat_sgf, flat_col, sizes = _flatten_questions(df)
+    return _sequences_from_flat(flat_sgf, flat_col, sizes, views)
+
+
+def _sequences_from_flat(flat_sgf, flat_col, sizes, views) -> list:
+    """扁平清單 → [每題的逐手序列張量]（與 `_question_sequences` 同一套邏輯）。"""
+    from aicup.features import normalise_color
+    from aicup.goboard import BLACK
+    from aicup.moveseq import batch_move_sequences
+    from aicup.moveshape import batch_shape_sequences
 
     flip = ["W" if normalise_color(c) == BLACK else "B" for c in flat_col]
     parts, ok = [], None
@@ -304,6 +321,18 @@ def main() -> int:
                          "伺服器把你配對給實力相近的人，對手的表現反映配對分級，"
                          "而分級反映你的穩定實力。實測 +0.0491±0.0232（6/6 勝，t=5.19）。"
                          "⚠️ 給了這個就會在測試集上多抽一次特徵，時間加倍")
+    ap.add_argument("--crosstask", action="store_true",
+                    help="**跨子題證據轉移**：先用競賽一認出每道棋力題是哪位候選人，"
+                         "再用那位候選人的 100 譜增強棋力預測。"
+                         "實測若假設成立 +0.0586，不成立 −0.1993（RESULTS.md §2.20）"
+                         "——所以內建偵測器，判準不過就自動不套用。預設關閉")
+    ap.add_argument("--crosstask-weight", type=float, default=1.0,
+                    help="增強的混合權重。1.0 = 全用配對到的 100 盤（假設成立時最好）")
+    ap.add_argument("--crosstask-min-bijection", type=float, default=0.70,
+                    help="套用的門檻：**Sinkhorn 之前**的 top-1 相異率。"
+                         "實測假設成立 0.9075、不成立 0.5117。"
+                         "⚠️ 一定要看 Sinkhorn 之前的——Sinkhorn 會強制一一對應，"
+                         "之後的信心對兩種情境長得一模一樣")
     ap.add_argument("--calib-prior", default="natural",
                     choices=["natural", "uniform", "p100"],
                     help="切點校準時假設的測試集等級先驗。natural = 校準集自身的分布"
@@ -437,49 +466,73 @@ def main() -> int:
         from aicup.featstore import open_stores
         _X, _ok = open_stores(["cache/features.npy"] + list(args.extra_features))
         _meta = load_metadata()
-        _sp = _mps(_meta, val_frac=0.20, seed=42)
-        _q = _brq(_meta, _sp, n_per_player=3, seed=0)
+        _split = _mps(_meta, val_frac=0.20, seed=42)
+        _q = _brq(_meta, _split, n_per_player=3, seed=0)
         # 校準題目的等級分布決定了切點的位置。預設 natural（校準集自身的分布）。
         # 若 11/04 拿到公開測試集後判定官方的分布更接近平衡，改這個旗標即可，
         # 不必動程式碼——實測固定先驗之間最壞情況差 0.010（RESULTS.md §2.7）。
         _prior = _rank_prior(args.calib_prior, _meta)
-        if rank_mlp:
-            nets, rsc, rdev, qpost = rank_mlp
-            _P = _Pg = qpost(nets, rsc, _X, _ok, _q.game_rows, rdev)
+        from aicup.question_model import blend_log_posteriors as _blp
+        _bcache = {}
+
+        def _calib_parts(game_rows):
+            """對一組題目算出所有 stacker 成分的 log 後驗，外加固定權重路徑的 _lo。
+
+            抽成函式是為了讓**跨子題增強**能用完全相同的邏輯算第二次
+            （一次是題目自己的 5~20 盤，一次是配對到的候選人的 100 盤）——
+            兩邊若用不同的程式碼，混合出來的東西就不可比。
+            """
+            if rank_mlp:
+                nets, rsc, rdev, qpost = rank_mlp
+                P = Pg = qpost(nets, rsc, _X, _ok, game_rows, rdev)
+                if rank_question:
+                    P = np.exp(_blend_question(rank_question, _X, _ok, game_rows,
+                                               np.log(np.clip(P, 1e-12, None))))
+            else:
+                P = Pg = model.question_proba(
+                    [np.asarray(_X[r[_ok[r]]]) for r in game_rows], args.aggregation)
+            parts = {"game": np.log(np.clip(Pg, 1e-12, None))}
             if rank_question:
-                _P = np.exp(_blend_question(rank_question, _X, _ok,
-                                            _q.game_rows, np.log(np.clip(_P, 1e-12, None))))
-        else:
-            _P = _Pg = model.question_proba(
-                [np.asarray(_X[r[_ok[r]]]) for r in _q.game_rows], args.aggregation)
-        _parts = {"game": np.log(np.clip(_Pg, 1e-12, None))}
-        if rank_question:
-            _parts["question"] = _question_log_posteriors(rank_question, _X, _ok,
-                                                          _q.game_rows)
-        _lo = np.log(np.clip(_P, 1e-12, None))
-        if seq_models:
-            # 每個變體用**自己的**序列庫。24 維的舊變體與 48 維的棋形變體
-            # 不能共用同一組 blocks——共用會讓其中一邊的輸入維度對不上。
-            from aicup.question_model import blend_log_posteriors as _blp
-            _bcache = {}
-            for _tag, _nets, _views in seq_models:
-                _sp = _store_paths(_views)
-                key = tuple(_sp)
-                if key not in _bcache:
-                    _Ss = [np.load(x, mmap_mode="r") for x in _sp]
-                    _sok = None
-                    for x in _sp:
-                        _m = np.load(x.replace(".npy", "_ok.npy"))
-                        _sok = _m if _sok is None else (_sok & _m)
-                    _bcache[key] = [np.concatenate(
-                        [np.asarray(z[r[_sok[r]]], dtype=np.float32) for z in _Ss],
-                        axis=-1) for r in _q.game_rows]
-                _l = np.log(np.clip(
-                    _seq_posteriors_from_blocks(_nets, _bcache[key], seq_dev),
-                    1e-12, None))
-                _parts[f"seq_{_tag}"] = _l
-            _ls = _parts[f"seq_{seq_models[0][0]}"]
-            _lo = _blp(_lo, _ls, w=args.seq_weight)   # 固定權重路徑只用第一個變體
+                parts["question"] = _question_log_posteriors(rank_question, _X, _ok,
+                                                             game_rows)
+            lo = np.log(np.clip(P, 1e-12, None))
+            if seq_models:
+                # 每個變體用**自己的**序列庫。24 維的舊變體與 48 維的棋形變體
+                # 不能共用同一組 blocks——共用會讓其中一邊的輸入維度對不上。
+                for tag_, nets_, views_ in seq_models:
+                    paths = _store_paths(views_)
+                    key = (tuple(paths), id(game_rows))
+                    if key not in _bcache:
+                        Ss = [np.load(x, mmap_mode="r") for x in paths]
+                        sok = None
+                        for x in paths:
+                            m_ = np.load(x.replace(".npy", "_ok.npy"))
+                            sok = m_ if sok is None else (sok & m_)
+                        _bcache[key] = [np.concatenate(
+                            [np.asarray(z[r[sok[r]]], dtype=np.float32) for z in Ss],
+                            axis=-1) for r in game_rows]
+                    parts[f"seq_{tag_}"] = np.log(np.clip(
+                        _seq_posteriors_from_blocks(nets_, _bcache[key], seq_dev),
+                        1e-12, None))
+                lo = _blp(lo, parts[f"seq_{seq_models[0][0]}"], w=args.seq_weight)
+            return parts, lo
+
+        _parts, _lo = _calib_parts(_q.game_rows)
+        if args.crosstask:
+            # 校準也必須用**增強後**的證據，否則切點是配在 5~20 盤的期望等級
+            # 分布上，而推論時的分布會因為多了 100 盤而變銳——切點就錯位了。
+            # 這裡假設配對正確（實測 top-1 0.949），用同一位玩家的其他棋局。
+            _prow = _meta.groupby("player_id").indices
+            _aux = []
+            for _pid, _rr in zip(_q.player_id, _q.game_rows):
+                _all = np.setdiff1d(_prow[_pid], _rr, assume_unique=False)
+                _aux.append(_all[:CROSSTASK_GALLERY] if len(_all) else _rr)
+            _pa, _la = _calib_parts(_aux)
+            w_ = args.crosstask_weight
+            _parts = {k: (1 - w_) * v + w_ * _pa[k] for k, v in _parts.items()}
+            _lo = (1 - w_) * _lo + w_ * _la
+            print(f"  跨子題增強：校準也用同一位玩家的另外 "
+                  f"{CROSSTASK_GALLERY} 盤（權重 {w_}）", flush=True)
 
         _sizes = np.array([max(int(_ok[r].sum()), 1) for r in _q.game_rows])
         _ci = _resample_to_prior(np.arange(len(_q.true_rank_id)), _q.true_rank_id,
