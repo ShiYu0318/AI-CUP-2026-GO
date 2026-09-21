@@ -1,7 +1,6 @@
 {
   "production": {
-    "player": 0.9652907611868082,
-    "rank": 0.5889086555648685
+    "player": 0.9652907611868082
   },
   "done": {
     "seq_5seed": {
@@ -71,8 +70,13 @@
       "score": 0.5899261542525502,
       "gain": 0.0010174986876817504,
       "won": false
+    },
+    "metric_trans": {
+      "score": 0.9629923240211631,
+      "gain": -0.0022984371656451508,
+      "won": false
     }
   },
   "note": "0.5715 是**學習式融合**下的分數。gate 已對齊 predict.py，兩邊同一把尺。",
-  "gate_version": 6
+  "gate_version": 7
 }
