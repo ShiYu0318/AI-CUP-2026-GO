@@ -282,6 +282,21 @@ class MultiTaskGoNet(nn.Module):
             out["quality"] = self.quality_head(cls)
         return out
 
+    def set_heads(self, emb, mask=None):
+        """由**已經算好的 embedding** 出題目層級預測。
+
+        `forward_set` 會自己跑 trunk；訓練時 trunk 的前向已經做過了，
+        重跑一次等於把計算量加倍。抽出來讓訓練迴圈能重用同一次前向，
+        **順便讓 `set_pool` 拿到梯度**——它原本只在評估時用到，
+        等於評估是透過一個隨機初始化的頭在算分數。
+        """
+        if self.pool_kind == "set_transformer":
+            pooled = self.set_pool(emb, mask)
+        else:
+            pooled, _ = self.set_pool(emb, mask)
+        z = self.trunk.bn_neck(pooled)
+        return {"rank_logits": self.rank_head(z), "corn_logits": self.corn_head(z)}
+
     def forward_set(self, x, mask=None):
         """x: (B, N, C, 19, 19) —— 一題的 N 局棋，聚合後再出題目層級預測。"""
         B, N = x.shape[:2]

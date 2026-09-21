@@ -108,6 +108,11 @@ def main() -> int:
                          "refcount 更新會把頁面複製掉，所以「父程序先載入」也救不了。）")
     ap.add_argument("--arcface-weight", type=float, default=1.0)
     ap.add_argument("--corn-weight", type=float, default=0.5)
+    ap.add_argument("--set-weight", type=float, default=1.0,
+                    help="題目層級（集合池化）損失的權重。**不要設成 0。**\n"
+                         "評估是走 `forward_set` 的，而訓練迴圈只跑逐局前向——"
+                         "沒有這一項的話 `set_pool` 永遠是隨機初始化，"
+                         "題目分數會卡在隨機水準而且看不出原因")
     ap.add_argument("--balance-losses", action="store_true",
                     help="用各損失的滑動平均把量級正規化，避免大量級的損失壟斷梯度。"
                          "實測未加時 arcface 損失量級 13~17、rank 只有 2.3，"
@@ -265,6 +270,25 @@ def main() -> int:
         loss = (_balanced("rank", loss_rank)
                 + args.corn_weight * _balanced("corn", loss_corn)
                 + args.arcface_weight * _balanced("arc", loss_arc))
+
+        # ⚠️ **集合池化頭必須在訓練時拿到梯度。**
+        # 訓練迴圈只呼叫 `model(x)`（逐局），但 `evaluate_rank` 走 `forward_set`
+        # ——中間隔著 `set_pool`，而它從來沒被訓練過。
+        # 實測後果：題目分數卡在 0.19（隨機約 0.166）、期望解碼與 argmax
+        # 完全相同（後驗幾乎均勻）、rank 損失停在 ln(10)=2.303，
+        # 而且 checkpoint 是照那個隨機分數挑的。
+        # PK 取樣器給的正是「p 位玩家 × 每人 k 局」，那 k 局天生就是一個集合。
+        # 重用同一次前向的 embedding，不增加計算量。
+        if args.set_weight > 0 and B % args.k == 0:
+            n_sets = B // args.k
+            # 每局先把 snapshot 平均——`QuestionDataset` 就是這樣做的，
+            # 訓練與評估的集合元素語意必須一致。
+            emb = out["embedding"].view(n_sets, args.k, S, -1).mean(2)
+            so = model.set_heads(emb)
+            y_set = y_rank.view(n_sets, args.k, S)[:, 0, 0]
+            loss = loss + args.set_weight * (
+                _balanced("set", soft_ce(so["rank_logits"], y_set))
+                + args.corn_weight * corn(so["corn_logits"], y_set))
         if y_quality is not None:
             tgt = y_quality.repeat_interleave(S, dim=0).to(device)
             loss_qual = F.smooth_l1_loss(out["quality"], tgt)
