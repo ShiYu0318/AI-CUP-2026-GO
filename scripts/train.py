@@ -214,14 +214,18 @@ def main() -> int:
 
     # 各損失的量級差很多（arcface 13~17 vs rank 2.3），直接相加會讓梯度被
     # 大量級的那一項主導。這裡用滑動平均把每項除以自身尺度，讓三個任務等權。
-    scale = {"rank": None, "corn": None, "arc": None}
+    # ⚠️ 用 setdefault 而不是寫死鍵值。原本寫死 {"rank","corn","arc"}，
+    # 後來加了 "set" 這一項就直接 KeyError 當掉——而且是在第一步就掛，
+    # 等於整個訓練沒開始。新增損失項不該需要同時記得改這裡。
+    scale: dict[str, float | None] = {}
 
     def _balanced(name, value):
         if not args.balance_losses:
             return value
         v = float(value.detach())
-        scale[name] = v if scale[name] is None else (
-            args.balance_momentum * scale[name] + (1 - args.balance_momentum) * v)
+        prev = scale.get(name)
+        scale[name] = v if prev is None else (
+            args.balance_momentum * prev + (1 - args.balance_momentum) * v)
         return value / max(scale[name], 1e-8)
 
     questions = build_rank_questions(meta, split, n_per_player=1, seed=0,
