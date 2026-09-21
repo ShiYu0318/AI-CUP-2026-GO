@@ -155,9 +155,15 @@ class QuestionDataset(Dataset):
             sgf = self.cache.get(int(rec["file_idx"]), int(rec["row"]))
             t = game_planes(sgf, rec["color"], n_snapshots=self.n_snapshots)
             if t is not None:
-                tensors.append(planes_to_float(t).mean(axis=0))
+                # ⚠️ **每個 snapshot 各自是集合的一個成員，不要先平均。**
+                # 訓練時 trunk 看到的是單一時點的盤面；若評估時餵
+                # 「S 個 snapshot 的平均」，那是一張模糊的「平均局面」——
+                # 一種 trunk 從來沒見過的輸入分布。
+                # 實測後果：逐局 rank 損失明明在下降（2.29 → 2.14），
+                # 題目分數卻一路惡化（0.2684 → 0.1435）。
+                tensors.extend(planes_to_float(t))
         if not tensors:
-            tensors = [np.zeros((34, 19, 19), dtype=np.float32)]
+            tensors = [np.zeros((n_planes(), SIZE, SIZE), dtype=np.float32)]
         x = np.stack(tensors)
         if self.augment:
             x = _dihedral(x, int(np.random.randint(8)))

@@ -285,11 +285,13 @@ def main() -> int:
         # 重用同一次前向的 embedding，不增加計算量。
         if args.set_weight > 0 and B % args.k == 0:
             n_sets = B // args.k
-            # 每局先把 snapshot 平均——`QuestionDataset` 就是這樣做的，
-            # 訓練與評估的集合元素語意必須一致。
-            emb = out["embedding"].view(n_sets, args.k, S, -1).mean(2)
+            # **每個 snapshot 各自是集合的一個成員**，與 `QuestionDataset` 一致。
+            # 先前這裡把 S 個 snapshot 的 embedding 平均、而評估端是把
+            # S 張**盤面**平均——兩種「平均」不等價，而且後者會產生
+            # trunk 從沒見過的輸入。
+            emb = out["embedding"].view(n_sets, args.k * S, -1)
             so = model.set_heads(emb)
-            y_set = y_rank.view(n_sets, args.k, S)[:, 0, 0]
+            y_set = y_rank.view(n_sets, args.k * S)[:, 0]
             loss = loss + args.set_weight * (
                 _balanced("set", soft_ce(so["rank_logits"], y_set))
                 + args.corn_weight * corn(so["corn_logits"], y_set))

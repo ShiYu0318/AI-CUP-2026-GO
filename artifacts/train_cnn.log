@@ -1,7 +1,0 @@
-device = mps
-訓練局數 783,582，訓練身分 6,405
-棋形品質輔助目標 6 維：empty_triangle, abandon_atari, atari_given_rate, wasted_fill, contact_early, cap_per_move
-參數量 backbone 5,003,034 / arcface 7,378,560
-  step   2000 loss 2.8332 (rank 2.290 corn 0.503 arc 14.678) | 題目分數 期望解碼 0.2684 argmax 0.2684 | 14.7 分
-  step   4000 loss 2.6495 (rank 2.262 corn 0.420 arc 14.135) | 題目分數 期望解碼 0.2684 argmax 0.2684 | 28.9 分
-  step   6000 loss 2.6531 (rank 2.254 corn 0.441 arc 14.301) | 題目分數 期望解碼 0.1937 argmax 0.1422 | 43.0 分
