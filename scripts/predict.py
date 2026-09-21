@@ -73,18 +73,54 @@ def _question_features(df: pd.DataFrame, with_opponent: bool = False):
     return out
 
 
-def _question_sequences(df: pd.DataFrame, with_opponent: bool = False):
-    """把一份題目檔轉成 [每題的逐手序列張量]。
+# 序列庫檔名 → (抽取方式, max_moves)。
+# `predict.py` 直接從 checkpoint 自己記錄的 `args["sequences"]` /
+# `args["extra_sequences"]` 推導出該模型需要哪些視角，**不另外開旗標**——
+# 旗標會跟 checkpoint 不同步，而 checkpoint 自己記的不會。
+SEQ_VIEWS = {
+    "sequences.npy":       ("move", False, 160),
+    "sequences_opp.npy":   ("move", True, 160),
+    "seqshape.npy":        ("shape", False, 160),
+    "seqshape_opp.npy":    ("shape", True, 160),
+    "sequences240.npy":    ("move", False, 240),
+    "sequences240_opp.npy": ("move", True, 240),
+}
+
+
+def _views_of(ck_args: dict) -> tuple:
+    """由 checkpoint 的 args 推出它訓練時用了哪些視角，順序照舊。"""
+    paths = [ck_args.get("sequences", "cache/sequences.npy")] + \
+        list(ck_args.get("extra_sequences", []))
+    out = []
+    for p_ in paths:
+        key = os.path.basename(p_)
+        if key not in SEQ_VIEWS:
+            raise ValueError(
+                f"不認得的序列庫 {p_}——請在 predict.py 的 SEQ_VIEWS 補上它的抽取方式。"
+                f"目前支援：{sorted(SEQ_VIEWS)}")
+        out.append(SEQ_VIEWS[key])
+    return tuple(out)
+
+
+def _store_paths(views) -> list:
+    """視角 → 對應的序列庫路徑（校準時走預先算好的庫，不重新解析 SGF）。"""
+    rev = {v: k for k, v in SEQ_VIEWS.items()}
+    return [f"cache/{rev[v]}" for v in views]
+
+
+def _question_sequences(df: pd.DataFrame, views) -> list:
+    """把一份題目檔轉成 [每題的逐手序列張量]，視角沿**特徵軸**串接。
 
     與 `_question_features` 平行：那個抽整局的統計摘要，這個抽逐手序列。
     有效判斷兩邊一致（手數 < 30 或我方手數 < 15 就算失敗）。
 
-    with_opponent=True 會同時抽對手視角的序列並沿**特徵軸**串接
-    （每一手 12 維 → 24 維），順序必須與訓練時一致。
+    views 是 `_views_of()` 的輸出，順序**必須與訓練時完全一致**，
+    否則特徵欄會錯位——而錯位不會報錯，只會讓分數悄悄變差。
     """
     from aicup.features import normalise_color
     from aicup.goboard import BLACK
     from aicup.moveseq import batch_move_sequences
+    from aicup.moveshape import batch_shape_sequences
 
     sgf_cols = [f"sgf_{i}" for i in range(1, MAX_GAMES + 1)]
     col_cols = [f"color_{i}" for i in range(1, MAX_GAMES + 1)]
@@ -96,12 +132,16 @@ def _question_sequences(df: pd.DataFrame, with_opponent: bool = False):
             if pd.notna(v) and str(v).strip():
                 flat_sgf.append(v); flat_col.append(r[cc]); n += 1
         sizes.append(n)
-    S, ok = batch_move_sequences(flat_sgf, flat_col)
-    if with_opponent:
-        flip = ["W" if normalise_color(c) == BLACK else "B" for c in flat_col]
-        So, oko = batch_move_sequences(flat_sgf, flip)
-        S = np.concatenate([S, So], axis=-1)
-        ok = ok & oko
+
+    flip = ["W" if normalise_color(c) == BLACK else "B" for c in flat_col]
+    parts, ok = [], None
+    for kind, opp, mm in views:
+        fn = batch_shape_sequences if kind == "shape" else batch_move_sequences
+        A, m = fn(flat_sgf, flip if opp else flat_col, max_moves=mm)
+        parts.append(A)
+        ok = m if ok is None else (ok & m)        # 任一視角失敗就整局不用
+    S = parts[0] if len(parts) == 1 else np.concatenate(parts, axis=-1)
+
     out, pos = [], 0
     for n in sizes:
         blk = S[pos:pos + n][ok[pos:pos + n]]
@@ -372,14 +412,16 @@ def main() -> int:
         for path in paths:
             sck = torch.load(path, map_location=seq_dev, weights_only=False)
             nets = []
-            _nfeat = 12 * (1 + len(sck["args"].get("extra_sequences", [])))
+            _views = _views_of(sck["args"])
+            _nfeat = 12 * len(_views)
             for sd in sck["models"]:
                 n = build_seq_net(_nfeat, sck["args"])
                 n.load_state_dict(sd); n.eval().to(seq_dev)
                 nets.append(n)
-            seq_models.append((os.path.basename(os.path.dirname(path)), nets))
+            seq_models.append((os.path.basename(os.path.dirname(path)), nets, _views))
         print(f"  ＋逐手序列模型 {len(seq_models)} 個變體："
-              f"{', '.join(f'{t}({len(n)} seed)' for t, n in seq_models)}", flush=True)
+              f"{', '.join(f'{t}({len(n)} seed, {len(v)} 視角)' for t, n, v in seq_models)}",
+              flush=True)
     seq_nets = seq_models[0][1] if seq_models else None      # 固定權重路徑用第一個
 
     model = None if rank_mlp else _fit_rank_model("cache/rank_model.pkl",
@@ -416,20 +458,25 @@ def main() -> int:
                                                           _q.game_rows)
         _lo = np.log(np.clip(_P, 1e-12, None))
         if seq_models:
-            from aicup.moveseq import MAX_MOVES as _MM
-            _sp = ["cache/sequences.npy"] + list(args.extra_sequences)
-            _Ss = [np.load(x, mmap_mode="r") for x in _sp]
-            _sok = None
-            for x in _sp:
-                _m = np.load(x.replace(".npy", "_ok.npy"))
-                _sok = _m if _sok is None else (_sok & _m)
-            _blocks = [np.concatenate(
-                [np.asarray(z[r[_sok[r]]], dtype=np.float32) for z in _Ss], axis=-1)
-                for r in _q.game_rows]
+            # 每個變體用**自己的**序列庫。24 維的舊變體與 48 維的棋形變體
+            # 不能共用同一組 blocks——共用會讓其中一邊的輸入維度對不上。
             from aicup.question_model import blend_log_posteriors as _blp
-            for _tag, _nets in seq_models:
+            _bcache = {}
+            for _tag, _nets, _views in seq_models:
+                _sp = _store_paths(_views)
+                key = tuple(_sp)
+                if key not in _bcache:
+                    _Ss = [np.load(x, mmap_mode="r") for x in _sp]
+                    _sok = None
+                    for x in _sp:
+                        _m = np.load(x.replace(".npy", "_ok.npy"))
+                        _sok = _m if _sok is None else (_sok & _m)
+                    _bcache[key] = [np.concatenate(
+                        [np.asarray(z[r[_sok[r]]], dtype=np.float32) for z in _Ss],
+                        axis=-1) for r in _q.game_rows]
                 _l = np.log(np.clip(
-                    _seq_posteriors_from_blocks(_nets, _blocks, seq_dev), 1e-12, None))
+                    _seq_posteriors_from_blocks(_nets, _bcache[key], seq_dev),
+                    1e-12, None))
                 _parts[f"seq_{_tag}"] = _l
             _ls = _parts[f"seq_{seq_models[0][0]}"]
             _lo = _blp(_lo, _ls, w=args.seq_weight)   # 固定權重路徑只用第一個變體
@@ -498,10 +545,13 @@ def main() -> int:
         lo = np.log(np.clip(P, 1e-12, None))
         if seq_models:
             from aicup.question_model import blend_log_posteriors as _blp
-            blocks = _question_sequences(df, with_opponent=bool(args.extra_sequences))
-            for tag_, nets_ in seq_models:
+            bcache = {}
+            for tag_, nets_, views_ in seq_models:
+                if views_ not in bcache:
+                    bcache[views_] = _question_sequences(df, views_)
                 parts[f"seq_{tag_}"] = np.log(np.clip(
-                    _seq_posteriors_from_blocks(nets_, blocks, seq_dev), 1e-12, None))
+                    _seq_posteriors_from_blocks(nets_, bcache[views_], seq_dev),
+                    1e-12, None))
             lo = _blp(lo, parts[f"seq_{seq_models[0][0]}"], w=args.seq_weight)
         if args.decode == "threshold":
             T, th, stacker = calib
