@@ -688,7 +688,7 @@ def main() -> int:
         from aicup.question_model import blend_log_posteriors as _blp
         _bcache = {}
 
-        def _calib_parts(game_rows):
+        def _calib_parts(game_rows, tag="q"):
             """對一組題目算出所有 stacker 成分的 log 後驗，外加固定權重路徑的 _lo。
 
             抽成函式是為了讓**跨子題增強**能用完全相同的邏輯算第二次
@@ -714,7 +714,10 @@ def main() -> int:
                 # 不能共用同一組 blocks——共用會讓其中一邊的輸入維度對不上。
                 for tag_, nets_, views_ in seq_models:
                     paths = _store_paths(views_)
-                    key = (tuple(paths), id(game_rows))
+                    # ⚠️ 快取的 key 用呼叫端給的 tag，**不要用 id(game_rows)**：
+                    # Python 的 id() 在物件被回收之後會重用，
+                    # 兩個不同的清單可能拿到同一個 id → 取到錯的 blocks 而且不報錯。
+                    key = (tuple(paths), tag)
                     if key not in _bcache:
                         Ss = [np.load(x, mmap_mode="r") for x in paths]
                         sok = None
@@ -730,7 +733,7 @@ def main() -> int:
                 lo = _blp(lo, parts[f"seq_{seq_models[0][0]}"], w=args.seq_weight)
             return parts, lo
 
-        _parts, _lo = _calib_parts(_q.game_rows)
+        _parts, _lo = _calib_parts(_q.game_rows, tag="question")
         if args._crosstask_active:
             # 校準也必須用**增強後**的證據，否則切點是配在 5~20 盤的期望等級
             # 分布上，而推論時的分布會因為多了 100 盤而變銳——切點就錯位了。
@@ -740,7 +743,7 @@ def main() -> int:
             for _pid, _rr in zip(_q.player_id, _q.game_rows):
                 _all = np.setdiff1d(_prow[_pid], _rr, assume_unique=False)
                 _aux.append(_all[:CROSSTASK_GALLERY] if len(_all) else _rr)
-            _pa, _la = _calib_parts(_aux)
+            _pa, _la = _calib_parts(_aux, tag="crosstask_gallery")
             w_ = args.crosstask_weight
             _parts = {k: (1 - w_) * v + w_ * _pa[k] for k, v in _parts.items()}
             _lo = (1 - w_) * _lo + w_ * _la
