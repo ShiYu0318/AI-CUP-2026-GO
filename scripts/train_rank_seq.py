@@ -168,32 +168,51 @@ def build_seq_net(n_feat: int, ck_args: dict):
 def question_posteriors(nets, S, ok, lens, game_rows, device, batch: int = 256):
     """逐題：多局後驗做幾何平均（與 train_rank_mlp 的聚合方式一致）。
 
+    **先算完所有棋局，再逐題聚合**——不要逐題呼叫模型。
+    逐題的話每次只有 5~20 局，1660 題 × 3 個網路 = 4980 次前向，
+    全部是小 batch。卷積還撐得住，但 GRU 在 MPS 上每次前向要發
+    160×2×2 次序列 kernel，啟動開銷完全主導：
+    實測逐題版算一個 seed 的 GRU 後驗要**超過兩小時**，
+    而整批版只要幾十秒。數值上兩者完全相同（同樣的幾何平均）。
+
     ⚠️ 結束時還原原本的 train/eval 模式。無條件切回 train 會讓後續推論
     帶著 dropout 跑（見 tests/test_eval_mode.py）。
     """
     was = [n.training for n in nets]
     for n in nets:
         n.eval()
-    out = []
+
+    sels = [rows[ok[rows]] for rows in game_rows]
+    flat = np.concatenate([s_ for s_ in sels if len(s_)]) if any(len(s_) for s_ in sels) \
+        else np.zeros(0, dtype=np.int64)
+    uniq, inv = np.unique(flat, return_inverse=True)
+
+    P = np.empty((len(uniq), 10), dtype=np.float64)
+    T = S.shape[1]
     with torch.no_grad():
-        for rows in game_rows:
-            sel = rows[ok[rows]]
-            if len(sel) == 0:
-                out.append(np.full(10, 0.1)); continue
+        for i in range(0, len(uniq), batch):
+            sel = uniq[i:i + batch]
             x = torch.from_numpy(np.asarray(S[sel], dtype=np.float16)).to(device).float()
             mk = torch.from_numpy(
-                np.arange(S.shape[1])[None, :] < lens[sel][:, None]).to(device)
+                np.arange(T)[None, :] < lens[sel][:, None]).to(device)
             ps = []
             for n in nets:
                 lc, lo = n(x, mk)
                 pc = corn_to_proba(lo).cpu().numpy()
                 ps.append(0.5 * torch.softmax(lc, -1).cpu().numpy()
                           + 0.5 * pc / np.maximum(pc.sum(1, keepdims=True), 1e-12))
-            p = np.mean(ps, axis=0)
-            g = np.exp(np.log(np.clip(p, 1e-12, None)).mean(axis=0))
-            out.append(g / g.sum())
+            P[i:i + len(sel)] = np.mean(ps, axis=0)
     for n, t in zip(nets, was):
         n.train(t)
+
+    logP = np.log(np.clip(P, 1e-12, None))
+    out, at = [], 0
+    for s_ in sels:
+        if len(s_) == 0:
+            out.append(np.full(10, 0.1)); continue
+        g = np.exp(logP[inv[at:at + len(s_)]].mean(axis=0))
+        at += len(s_)
+        out.append(g / g.sum())
     return np.stack(out)
 
 
