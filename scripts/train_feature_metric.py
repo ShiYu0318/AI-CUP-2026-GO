@@ -147,13 +147,23 @@ def main() -> int:
     labels = np.array([p2l[p] for p in pid[tr]], dtype=np.int64)
     print(f"訓練局數 {len(tr):,}，身分 {len(players):,}", flush=True)
 
-    cols = identity_feature_columns(drop_global_position=not args.keep_global_position)
+    ident = np.asarray(
+        identity_feature_columns(drop_global_position=not args.keep_global_position))
     if args.extra_features:
-        # identity_feature_columns 的索引是針對「我方 589 維」定義的。
-        # 額外的特徵庫接在後面，對每一份套用同一組相對索引。
-        base = X.parts[0].shape[1]
-        cols = np.concatenate([np.asarray(cols) + i * base
-                               for i in range(len(X.parts))])
+        # identity_feature_columns 的索引是針對「589 維手工特徵」定義的。
+        # ⚠️ 額外的特徵庫**不一定也是 589 維**——例如棋形統計只有 48 維。
+        # 舊版對每一份套用同一組相對索引，遇到寬度不同的庫會直接越界。
+        # 改成：589 維的套身分欄位子集，其他寬度的整份都用
+        #（那些庫本來就是為了加資訊而存在，沒有「要丟掉全域位置」的問題）。
+        n_base = len(ident) and int(X.parts[0].shape[1])
+        pieces, off = [], 0
+        for part in X.parts:
+            w = int(part.shape[1])
+            pieces.append(ident + off if w == n_base else np.arange(w) + off)
+            off += w
+        cols = np.concatenate(pieces)
+    else:
+        cols = ident
     print(f"特徵欄位 {len(cols)} / {X.shape[1]}", flush=True)
     Xraw = np.asarray(X[tr])[:, cols]
     scaler = FeatureScaler().fit(Xraw)
