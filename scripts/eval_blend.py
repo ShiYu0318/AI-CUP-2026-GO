@@ -57,7 +57,7 @@ QUESTION = os.environ.get("AICUP_QUESTION", "cache/rank_question_opp/models.pt")
 SEQ = [p for p in os.environ.get(
     "AICUP_SEQ",
     "cache/rank_seq_opp/models.pt,cache/rank_seq_opp_full/models.pt,"
-    "cache/rank_seq_w192/models.pt").split(",") if p]
+    "cache/rank_seq_w192/models.pt,cache/rank_seq_shape/models.pt").split(",") if p]
 # 候選模型用 **AICUP_SEQ_EXTRA 附加**，不要用 AICUP_SEQ 取代。
 # 取代的話等於拿單一模型去比三變體集成的分數——那是不公平的比較，
 # 而且會把「它加進去有沒有幫助」這個真正要問的問題換成另一個問題。
@@ -68,9 +68,13 @@ FEATS = os.environ.get(
 # 會讓另一個的輸入層對不上。`AICUP_GAME_FEATS` 只換單局模型那一邊。
 GAME_FEATS = [p for p in os.environ.get("AICUP_GAME_FEATS", "").split(",") if p]
 # 每個 checkpoint 一組序列庫，用 ";" 分隔；只給一組就套用到全部。
+# ⚠️ 每個變體一組序列庫（用 ";" 分隔）。shape 變體是 48 維/手、其餘是 24 維/手，
+# 套用同一組庫的話其中一邊的輸入維度會對不上、`load_state_dict` 直接拋錯。
+_DEF_2V = "cache/sequences.npy,cache/sequences_opp.npy"
+_DEF_4V = _DEF_2V + ",cache/seqshape.npy,cache/seqshape_opp.npy"
 _ss = [g.split(",") for g in os.environ.get(
     "AICUP_SEQ_STORES",
-    "cache/sequences.npy,cache/sequences_opp.npy").split(";") if g]
+    ";".join([_DEF_2V, _DEF_2V, _DEF_2V, _DEF_4V])).split(";") if g]
 SEQS = _ss if len(_ss) == len(SEQ) else [_ss[0]] * len(SEQ)
 # 附加的候選可以有自己的序列庫（例如棋形庫、240 手庫）
 _es = [g.split(",") for g in os.environ.get("AICUP_SEQ_EXTRA_STORES", "").split(";") if g]
