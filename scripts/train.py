@@ -94,7 +94,18 @@ def main() -> int:
     ap.add_argument("--eval-every", type=int, default=500)
     ap.add_argument("--eval-questions", type=int, default=800,
                     help="評估題數。太少會讓 checkpoint 選擇被雜訊主導（見 evaluate_rank）")
-    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--workers", type=int, default=0,
+                    help="DataLoader 的 worker 數。**預設 0 是刻意的。**\n"
+                         "`SgfCache` 是每個實例各自惰性載入整份 CSV（10 檔約 1.3 GB 文字，"
+                         "在 pandas 裡約 3 GB），而 p×k 的批次會橫跨所有等級檔——"
+                         "所以每個 worker 最後都會載入全部 10 檔。\n"
+                         "實測 macOS 上 6 個 worker = 約 18 GB，直接吃光記憶體："
+                         "程序活著、不報錯，但 worker 的 CPU 是 0%%、"
+                         "主程序 30 秒只累積 1.5 秒 CPU，完全沒在訓練。\n"
+                         "workers=0 時單一 cache 約 2.5 GB，實測 **2.5 步/秒**"
+                         "（width 96 blocks 8，batch 48）——夠快，不需要 worker。\n"
+                         "（Python 的 fork + copy-on-write 對 100 萬個字串物件無效，"
+                         "refcount 更新會把頁面複製掉，所以「父程序先載入」也救不了。）")
     ap.add_argument("--arcface-weight", type=float, default=1.0)
     ap.add_argument("--corn-weight", type=float, default=0.5)
     ap.add_argument("--balance-losses", action="store_true",
@@ -162,7 +173,21 @@ def main() -> int:
                      quality_cols=quality_cols)
     sampler = PKPlayerSampler(meta, train_rows, p=args.p, k=args.k,
                               n_batches=args.steps, seed=0)
-    loader = DataLoader(ds, batch_sampler=sampler, num_workers=args.workers)
+    # ⚠️ macOS 的 Python 3.13 預設用 **spawn**，而 spawn 出來的 DataLoader worker
+    # 在這個專案裡會卡住——`build_sequence_store.py` 早就踩過同一個坑。
+    # 症狀很不明顯：程序活著、不報錯，但 worker 的 CPU 幾乎是 0、
+    # 主程序 30 秒只累積 1.5 秒 CPU，等於完全沒在訓練。
+    # 資料載入純粹是數值運算與 SGF 解析，fork 安全。
+    mp_ctx = None
+    if args.workers > 0:
+        try:
+            mp_ctx = torch.multiprocessing.get_context("fork")
+        except ValueError:
+            mp_ctx = None
+    loader = DataLoader(ds, batch_sampler=sampler, num_workers=args.workers,
+                        multiprocessing_context=mp_ctx,
+                        persistent_workers=args.workers > 0,
+                        prefetch_factor=4 if args.workers > 0 else None)
 
     model = MultiTaskGoNet(in_channels=34, width=args.width, blocks=args.blocks,
                            embed_dim=args.embed_dim, n_levels=N_LEVELS,
