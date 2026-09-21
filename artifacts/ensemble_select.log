@@ -4,3 +4,94 @@
     [快取命中] seq_rank_seq_opp__rank_seq_opp q526440dd33eddd0f
     [快取命中] seq_rank_seq_opp_full__rank_seq_opp_full q526440dd33eddd0f
     [快取命中] seq_rank_seq_w192__rank_seq_w192 q526440dd33eddd0f
+    [已快取] seq_rank_seq_gru__rank_seq_gru q526440dd33eddd0f（32.2 秒）
+    [快取命中] seq_rank_seq_narrow__rank_seq_narrow q526440dd33eddd0f
+    [已快取] seq_rank_seq_opp5__rank_seq_opp5 q526440dd33eddd0f（52.1 秒）
+    [已快取] seq_rank_seq240_fair__rank_seq240_fair q526440dd33eddd0f（55.0 秒）
+  seed 0 後驗就緒
+    [快取命中] game__rank_mlp_opp_big q6b60da26124f8178
+    [快取命中] question__rank_question_opp q6b60da26124f8178
+    [快取命中] seq_rank_seq_opp__rank_seq_opp q6b60da26124f8178
+    [快取命中] seq_rank_seq_opp_full__rank_seq_opp_full q6b60da26124f8178
+    [快取命中] seq_rank_seq_w192__rank_seq_w192 q6b60da26124f8178
+    [已快取] seq_rank_seq_gru__rank_seq_gru q6b60da26124f8178（34.6 秒）
+    [快取命中] seq_rank_seq_narrow__rank_seq_narrow q6b60da26124f8178
+    [已快取] seq_rank_seq_opp5__rank_seq_opp5 q6b60da26124f8178（50.8 秒）
+    [已快取] seq_rank_seq240_fair__rank_seq240_fair q6b60da26124f8178（53.7 秒）
+  seed 1 後驗就緒
+    [快取命中] game__rank_mlp_opp_big q5807b0090e3f4c90
+    [快取命中] question__rank_question_opp q5807b0090e3f4c90
+    [快取命中] seq_rank_seq_opp__rank_seq_opp q5807b0090e3f4c90
+    [快取命中] seq_rank_seq_opp_full__rank_seq_opp_full q5807b0090e3f4c90
+    [快取命中] seq_rank_seq_w192__rank_seq_w192 q5807b0090e3f4c90
+    [已快取] seq_rank_seq_gru__rank_seq_gru q5807b0090e3f4c90（34.6 秒）
+    [快取命中] seq_rank_seq_narrow__rank_seq_narrow q5807b0090e3f4c90
+    [已快取] seq_rank_seq_opp5__rank_seq_opp5 q5807b0090e3f4c90（51.2 秒）
+    [已快取] seq_rank_seq240_fair__rank_seq240_fair q5807b0090e3f4c90（52.4 秒）
+  seed 2 後驗就緒
+    [快取命中] game__rank_mlp_opp_big qc1ea97415e45fc65
+    [快取命中] question__rank_question_opp qc1ea97415e45fc65
+    [快取命中] seq_rank_seq_opp__rank_seq_opp qc1ea97415e45fc65
+    [快取命中] seq_rank_seq_opp_full__rank_seq_opp_full qc1ea97415e45fc65
+    [快取命中] seq_rank_seq_w192__rank_seq_w192 qc1ea97415e45fc65
+    [已快取] seq_rank_seq_gru__rank_seq_gru qc1ea97415e45fc65（33.9 秒）
+    [快取命中] seq_rank_seq_narrow__rank_seq_narrow qc1ea97415e45fc65
+    [已快取] seq_rank_seq_opp5__rank_seq_opp5 qc1ea97415e45fc65（50.2 秒）
+    [已快取] seq_rank_seq240_fair__rank_seq240_fair qc1ea97415e45fc65（51.6 秒）
+  seed 3 後驗就緒
+    [快取命中] game__rank_mlp_opp_big q9266d5d57f599559
+    [快取命中] question__rank_question_opp q9266d5d57f599559
+    [快取命中] seq_rank_seq_opp__rank_seq_opp q9266d5d57f599559
+    [快取命中] seq_rank_seq_opp_full__rank_seq_opp_full q9266d5d57f599559
+    [快取命中] seq_rank_seq_w192__rank_seq_w192 q9266d5d57f599559
+    [已快取] seq_rank_seq_gru__rank_seq_gru q9266d5d57f599559（34.9 秒）
+    [快取命中] seq_rank_seq_narrow__rank_seq_narrow q9266d5d57f599559
+    [已快取] seq_rank_seq_opp5__rank_seq_opp5 q9266d5d57f599559（49.9 秒）
+    [已快取] seq_rank_seq240_fair__rank_seq240_fair q9266d5d57f599559（52.2 秒）
+  seed 4 後驗就緒
+    [快取命中] game__rank_mlp_opp_big q4a711352ea8a0468
+    [快取命中] question__rank_question_opp q4a711352ea8a0468
+    [快取命中] seq_rank_seq_opp__rank_seq_opp q4a711352ea8a0468
+    [快取命中] seq_rank_seq_opp_full__rank_seq_opp_full q4a711352ea8a0468
+    [快取命中] seq_rank_seq_w192__rank_seq_w192 q4a711352ea8a0468
+    [已快取] seq_rank_seq_gru__rank_seq_gru q4a711352ea8a0468（35.3 秒）
+    [快取命中] seq_rank_seq_narrow__rank_seq_narrow q4a711352ea8a0468
+    [已快取] seq_rank_seq_opp5__rank_seq_opp5 q4a711352ea8a0468（49.4 秒）
+    [已快取] seq_rank_seq240_fair__rank_seq240_fair q4a711352ea8a0468（52.3 秒）
+  seed 5 後驗就緒
+    [快取命中] game__rank_mlp_opp_big qc0a06a04f47bb39c
+    [快取命中] question__rank_question_opp qc0a06a04f47bb39c
+    [快取命中] seq_rank_seq_opp__rank_seq_opp qc0a06a04f47bb39c
+    [快取命中] seq_rank_seq_opp_full__rank_seq_opp_full qc0a06a04f47bb39c
+    [快取命中] seq_rank_seq_w192__rank_seq_w192 qc0a06a04f47bb39c
+    [已快取] seq_rank_seq_gru__rank_seq_gru qc0a06a04f47bb39c（34.1 秒）
+    [快取命中] seq_rank_seq_narrow__rank_seq_narrow qc0a06a04f47bb39c
+    [已快取] seq_rank_seq_opp5__rank_seq_opp5 qc0a06a04f47bb39c（52.5 秒）
+    [已快取] seq_rank_seq240_fair__rank_seq240_fair qc0a06a04f47bb39c（52.6 秒）
+  seed 6 後驗就緒
+    [快取命中] game__rank_mlp_opp_big q97f3dbdfc1a7c39a
+    [快取命中] question__rank_question_opp q97f3dbdfc1a7c39a
+    [快取命中] seq_rank_seq_opp__rank_seq_opp q97f3dbdfc1a7c39a
+    [快取命中] seq_rank_seq_opp_full__rank_seq_opp_full q97f3dbdfc1a7c39a
+    [快取命中] seq_rank_seq_w192__rank_seq_w192 q97f3dbdfc1a7c39a
+    [已快取] seq_rank_seq_gru__rank_seq_gru q97f3dbdfc1a7c39a（34.6 秒）
+    [快取命中] seq_rank_seq_narrow__rank_seq_narrow q97f3dbdfc1a7c39a
+    [已快取] seq_rank_seq_opp5__rank_seq_opp5 q97f3dbdfc1a7c39a（50.0 秒）
+    [已快取] seq_rank_seq240_fair__rank_seq240_fair q97f3dbdfc1a7c39a（52.3 秒）
+  seed 7 後驗就緒
+快取 48/72 命中，1103 秒
+
+  基礎集成                                         0.5782 ±0.0102
+
+=== 每個候選單獨加進基礎集成 ===
+  ＋seq_rank_seq_gru                            0.5781 ±0.0099  -0.0001（6/8，t=-0.07）
+  ＋seq_rank_seq_narrow                         0.5794 ±0.0098  +0.0012（5/8，t=0.86）
+  ＋seq_rank_seq_opp5                           0.5781 ±0.0103  -0.0001（3/8，t=-0.07）
+  ＋seq_rank_seq240_fair                        0.5774 ±0.0093  -0.0008（4/8，t=-0.59）
+
+=== 貪婪前向選擇（門檻 +0.005，至少 7/8 勝）===
+  最佳候選 seq_rank_seq_narrow          +0.0012（5/8） → 停止
+
+最終集成（3 個）：['seq_rank_seq_opp', 'seq_rank_seq_opp_full', 'seq_rank_seq_w192']
+分數 0.5782 ±0.0102（基礎集成 0.5782）
+已寫出 artifacts/ensemble_select.json

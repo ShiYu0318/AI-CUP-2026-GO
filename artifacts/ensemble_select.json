@@ -1,0 +1,28 @@
+{
+  "base": [
+    "seq_rank_seq_opp",
+    "seq_rank_seq_opp_full",
+    "seq_rank_seq_w192"
+  ],
+  "base_score": 0.5781785996462138,
+  "steps": [
+    {
+      "candidate": "seq_rank_seq_narrow",
+      "gain": 0.00119660691171182,
+      "wins": 5,
+      "accepted": false,
+      "score": 0.5793752065579256
+    }
+  ],
+  "final": [
+    "seq_rank_seq_opp",
+    "seq_rank_seq_opp_full",
+    "seq_rank_seq_w192"
+  ],
+  "final_score": 0.5781785996462138,
+  "final_paths": [
+    "cache/rank_seq_opp/models.pt",
+    "cache/rank_seq_opp_full/models.pt",
+    "cache/rank_seq_w192/models.pt"
+  ]
+}

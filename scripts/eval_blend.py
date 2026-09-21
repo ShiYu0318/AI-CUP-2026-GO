@@ -58,12 +58,21 @@ SEQ = [p for p in os.environ.get(
     "AICUP_SEQ",
     "cache/rank_seq_opp/models.pt,cache/rank_seq_opp_full/models.pt,"
     "cache/rank_seq_w192/models.pt").split(",") if p]
+# 候選模型用 **AICUP_SEQ_EXTRA 附加**，不要用 AICUP_SEQ 取代。
+# 取代的話等於拿單一模型去比三變體集成的分數——那是不公平的比較，
+# 而且會把「它加進去有沒有幫助」這個真正要問的問題換成另一個問題。
+_extra = [p for p in os.environ.get("AICUP_SEQ_EXTRA", "").split(",") if p]
 FEATS = ["cache/features.npy", "cache/features_opp.npy"]
 # 每個 checkpoint 一組序列庫，用 ";" 分隔；只給一組就套用到全部。
 _ss = [g.split(",") for g in os.environ.get(
     "AICUP_SEQ_STORES",
     "cache/sequences.npy,cache/sequences_opp.npy").split(";") if g]
 SEQS = _ss if len(_ss) == len(SEQ) else [_ss[0]] * len(SEQ)
+# 附加的候選可以有自己的序列庫（例如棋形庫、240 手庫）
+_es = [g.split(",") for g in os.environ.get("AICUP_SEQ_EXTRA_STORES", "").split(";") if g]
+if _extra:
+    SEQ = SEQ + _extra
+    SEQS = SEQS + (_es if len(_es) == len(_extra) else [SEQS[0]] * len(_extra))
 
 
 def pick_device():

@@ -12,7 +12,8 @@
 用「單獨比較」當 gate 會**系統性地拒絕好的集成成員**——
 集成要的是分歧，不是每個成分都更強。
 所以 `eval_blend.py` 的預設就是上線中的整個集成，
-候選模型以 `AICUP_SEQ` 附加在後面，成為額外的一個 stacker 成分。
+候選模型以 **`AICUP_SEQ_EXTRA`** 附加在後面，成為額外的一個 stacker 成分。
+⚠️ 不要用 `AICUP_SEQ`——那是**取代**整個清單，等於拿單一模型去比集成的分數。
 
 **1. Gate 用的是 RESULTS.md〇章的協定，不是訓練腳本自己報的分數。**
 訓練腳本內建的評估是同集校準（樂觀）。這裡一律走 `scripts/eval_blend.py`：
@@ -127,9 +128,9 @@ EXPERIMENTS = [
         "produces": "cache/rank_seq_shape/models.pt",
         "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
                  "--json-out", "artifacts/blend_seqshape.json"],
-        "eval_env": {"AICUP_SEQ": "cache/rank_seq_shape/models.pt",
-                     "AICUP_SEQ_STORES": "cache/sequences.npy,cache/sequences_opp.npy,"
-                                         "cache/seqshape.npy,cache/seqshape_opp.npy"},
+        "eval_env": {"AICUP_SEQ_EXTRA": "cache/rank_seq_shape/models.pt",
+                     "AICUP_SEQ_EXTRA_STORES": "cache/sequences.npy,cache/sequences_opp.npy,"
+                                               "cache/seqshape.npy,cache/seqshape_opp.npy"},
         "json": "artifacts/blend_seqshape.json",
     },
     {
@@ -147,7 +148,7 @@ EXPERIMENTS = [
         "produces": "cache/rank_seq_rankloss/models.pt",
         "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
                  "--json-out", "artifacts/blend_seqrankloss.json"],
-        "eval_env": {"AICUP_SEQ": "cache/rank_seq_rankloss/models.pt"},
+        "eval_env": {"AICUP_SEQ_EXTRA": "cache/rank_seq_rankloss/models.pt"},
         "json": "artifacts/blend_seqrankloss.json",
     },
     {
@@ -166,9 +167,9 @@ EXPERIMENTS = [
         "produces": "cache/rank_seq_gru_shape/models.pt",
         "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
                  "--json-out", "artifacts/blend_seqgrushape.json"],
-        "eval_env": {"AICUP_SEQ": "cache/rank_seq_gru_shape/models.pt",
-                     "AICUP_SEQ_STORES": "cache/sequences.npy,cache/sequences_opp.npy,"
-                                         "cache/seqshape.npy,cache/seqshape_opp.npy"},
+        "eval_env": {"AICUP_SEQ_EXTRA": "cache/rank_seq_gru_shape/models.pt",
+                     "AICUP_SEQ_EXTRA_STORES": "cache/sequences.npy,cache/sequences_opp.npy,"
+                                               "cache/seqshape.npy,cache/seqshape_opp.npy"},
         "json": "artifacts/blend_seqgrushape.json",
     },
     {
@@ -188,7 +189,7 @@ EXPERIMENTS = [
         "produces": "cache/rank_seq_gru/models.pt",
         "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
                  "--json-out", "artifacts/blend_seqgru.json"],
-        "eval_env": {"AICUP_SEQ": "cache/rank_seq_gru/models.pt"},
+        "eval_env": {"AICUP_SEQ_EXTRA": "cache/rank_seq_gru/models.pt"},
         "json": "artifacts/blend_seqgru.json",
     },
 ]
