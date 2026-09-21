@@ -2,3 +2,21 @@ device = cpu
   特徵庫 1274 維（含 3 份額外），共同有效 1.0000
 訓練題 25,424，聚合特徵 5097 維 (0.1 分)
   seed 0 loss 1.3911 (1.7 分)
+  seed 1 loss 1.4053 (1.6 分)
+  seed 2 loss 1.3843 (1.5 分)
+Traceback (most recent call last):
+  File [35m"/Users/shiyu./Code/AI/AI-CUP-2026-GO/scripts/train_rank_question.py"[0m, line [35m181[0m, in [35m<module>[0m
+    raise SystemExit([31mmain[0m[1;31m()[0m)
+                     [31m~~~~[0m[1;31m^^[0m
+  File [35m"/Users/shiyu./Code/AI/AI-CUP-2026-GO/scripts/train_rank_question.py"[0m, line [35m146[0m, in [35mmain[0m
+    lg = np.log(np.clip([31mquestion_posteriors[0m[1;31m(gnets, gsc, X, ok, q.game_rows, device)[0m,
+                        [31m~~~~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^[0m
+  File [35m"/Users/shiyu./Library/Python/3.13/lib/python/site-packages/torch/utils/_contextlib.py"[0m, line [35m124[0m, in [35mdecorate_context[0m
+    return func(*args, **kwargs)
+  File [35m"/Users/shiyu./Code/AI/AI-CUP-2026-GO/scripts/train_rank_mlp.py"[0m, line [35m86[0m, in [35mquestion_posteriors[0m
+    A = torch.from_numpy([31mscaler.transform[0m[1;31m(np.asarray(X[sel]))[0m).to(device)
+                         [31m~~~~~~~~~~~~~~~~[0m[1;31m^^^^^^^^^^^^^^^^^^^^[0m
+  File [35m"/Users/shiyu./Code/AI/AI-CUP-2026-GO/scripts/../src/aicup/feature_metric.py"[0m, line [35m59[0m, in [35mtransform[0m
+    return (([31mnp.asarray(X, dtype=np.float64) [0m[1;31m-[0m[31m self.mu[0m) / self.sd).astype(np.float32)
+             [31m~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~[0m[1;31m^[0m[31m~~~~~~~~[0m
+[1;35mValueError[0m: [35moperands could not be broadcast together with shapes (15,1274) (1178,) [0m

@@ -35,33 +35,13 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from aicup.moveshape import N_SHAPE_FEATURES        # noqa: E402
+from aicup.moveshape import (N_SHAPE_FEATURES,      # noqa: E402
+                             N_SHAPE_STATS as N_STATS, aggregate_shape)
 
-N_STATS = 4
-
-
-def aggregate(block: np.ndarray) -> np.ndarray:
-    """(n, T, C) → (n, C*4)。只統計**有效的手**（補零的位置不算）。"""
-    X = block.astype(np.float32)
-    live = (np.abs(X).sum(-1) > 0)                   # (n, T)
-    n_live = live.sum(1).clip(1)[:, None]
-    w = live[..., None]
-    mean = (X * w).sum(1) / n_live
-    var = ((X - mean[:, None, :]) ** 2 * w).sum(1) / n_live
-    std = np.sqrt(np.maximum(var, 0.0))
-
-    # 前／後三分之一：用**各自的實際手數**切，不是用固定的時間索引——
-    # 手數少的棋局若用固定索引切，後三分之一會整段落在 padding 上。
-    T = X.shape[1]
-    idx = np.arange(T)[None, :]
-    lens = live.sum(1)[:, None]
-    early = live & (idx < lens / 3.0)
-    late = live & (idx >= 2.0 * lens / 3.0)
-    out = [mean, std]
-    for m in (early, late):
-        c = m.sum(1).clip(1)[:, None]
-        out.append((X * m[..., None]).sum(1) / c)
-    return np.concatenate(out, axis=1).astype(np.float32)
+# ⚠️ 聚合邏輯放在 `aicup.moveshape`，因為 `predict.py` 推論時也要用同一份。
+# 訓練用的特徵庫是這個函式算的，推論若用另一份實作，
+# 欄位語意只要差一點點就會**靜默**失準。
+aggregate = aggregate_shape
 
 
 def main() -> int:

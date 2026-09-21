@@ -56,7 +56,8 @@ def _load_metric(path: str):
         m = FeatureEmbedder(len(scaler.mu), embed_dim=a["embed_dim"], hidden=a["hidden"])
         m.load_state_dict(sd); m.eval().to(dev)
         models.append(m)
-    return models, scaler, dev, ck.get("cols")
+    stores = ["cache/features.npy"] + list(a.get("extra_features", []))
+    return models, scaler, dev, ck.get("cols"), stores
 
 
 def crosstask_decision(overlap: float, bijection: float, threshold: float):
@@ -80,6 +81,59 @@ def crosstask_decision(overlap: float, bijection: float, threshold: float):
                        f"硬套的話是把別人的棋局當成強證據（實測 −0.1993）")
     return True, (f"**套用**——Sinkhorn 前的 top-1 相異率 {bijection:.3f} "
                   f"≥ {threshold}")
+
+
+# 特徵庫檔名 → 推論時怎麼算。與 `SEQ_VIEWS` 同一個道理：
+# 從 checkpoint 自己記錄的 `args["extra_features"]` 推導，不另外開旗標。
+METRIC_FEATURES = {
+    "features.npy":           ("game", False),
+    "features_opp.npy":       ("game", True),
+    "features_shape.npy":     ("shape", False),
+    "features_shape_opp.npy": ("shape", True),
+}
+
+
+def _metric_features(sgfs, colors, stores):
+    """依 checkpoint 訓練時的**特徵庫順序**重算特徵矩陣。
+
+    ⚠️ 順序必須與 `open_stores([...])` 串接的順序完全一致，
+    否則欄位錯位——而錯位不會報錯，只會讓分數悄悄變差。
+    棋形統計用的是 `aicup.moveshape.aggregate_shape`，
+    與建庫時**同一份實作**（`build_shape_features.py` 也是 import 它）。
+    """
+    from aicup.features import normalise_color
+    from aicup.goboard import BLACK
+    from aicup.moveshape import aggregate_shape, batch_shape_sequences
+
+    flip = ["W" if normalise_color(c) == BLACK else "B" for c in colors]
+    parts, ok = [], None
+    for path in stores:
+        key = os.path.basename(path)
+        if key not in METRIC_FEATURES:
+            raise ValueError(
+                f"不認得的特徵庫 {path}——請在 predict.py 的 METRIC_FEATURES "
+                f"補上它的算法。目前支援：{sorted(METRIC_FEATURES)}")
+        kind, opp = METRIC_FEATURES[key]
+        cc = flip if opp else list(colors)
+        if kind == "game":
+            A, m = parallel_batch_features(sgfs, cc)
+        else:
+            S, m = batch_shape_sequences(sgfs, cc)
+            A = aggregate_shape(S)
+        parts.append(np.asarray(A, dtype=np.float32))
+        ok = m if ok is None else (ok & m)       # 任一視角失敗就整局不用
+    return (parts[0] if len(parts) == 1 else np.concatenate(parts, axis=1)), ok
+
+
+def _metric_question_features(df: pd.DataFrame, stores):
+    """題目檔 → [每題的度量學習特徵矩陣]。"""
+    flat_sgf, flat_col, sizes = _flatten_questions(df)
+    X, ok = _metric_features(flat_sgf, flat_col, stores)
+    out, pos = [], 0
+    for n in sizes:
+        out.append(X[pos:pos + n][ok[pos:pos + n]])
+        pos += n
+    return out
 
 
 def _crosstask_games(tag: str, feats, args, metric):
@@ -108,15 +162,10 @@ def _crosstask_games(tag: str, feats, args, metric):
     from aicup.feature_metric import embed_features, player_template
     from aicup.rerank import bijection_consistency, sinkhorn_assignment
 
-    models, scaler, mdev, cols = metric
+    models, scaler, mdev, cols, mstores = metric
     cand = pd.read_csv(path)
-    Xc, okc = parallel_batch_features(cand["sgf_content"].tolist(),
-                                      cand["color"].tolist())
-    n_own = Xc.shape[1]
-    if cols is not None and max(cols) >= n_own:
-        print("  跨子題增強：這個度量模型是用多份特徵庫訓練的，"
-              "目前的跨子題路徑只支援我方單視角——略過", flush=True)
-        return None
+    Xc, okc = _metric_features(cand["sgf_content"].tolist(),
+                               cand["color"].tolist(), mstores)
 
     def tpl(A):
         A = _np.asarray(A)
@@ -144,9 +193,7 @@ def _crosstask_games(tag: str, feats, args, metric):
         if _rs:
             overlap = len(_rs & set(cand["sgf_content"].astype(str))) / len(_rs)
     G = _np.stack([tpl(Xc[rows_by_name[n]]) for n in names])
-    # 棋力題的特徵可能含對手視角（1178 維），度量模型只吃我方 589 維
-    Q = _np.stack([tpl(f[:, :n_own]) if len(f) else _np.zeros(G.shape[1])
-                   for f in feats])
+    Q = _np.stack([tpl(f) if len(f) else _np.zeros(G.shape[1]) for f in feats])
     raw = Q @ G.T
     bij = bijection_consistency(raw)
     thr = args.crosstask_min_bijection
@@ -437,7 +484,7 @@ def main() -> int:
                          "1178 維（含對手視角）0.5402±0.0085 勝過 589 維的 0.4895±0.0090"
                          "（+0.0507，8/8 勝，t=14.84）。"
                          "設為空字串則退回 GBDT（0.4351，不建議）")
-    ap.add_argument("--feature-metric", default="cache/feature_metric/models.pt",
+    ap.add_argument("--feature-metric", default="cache/feature_metric_shape/models.pt",
                     help="競賽一的度量學習模型（目前增益最大：0.6630 -> 0.8125）。"
                          "設為空字串則退回「標準化+L2」的無學習版本")
     ap.add_argument("--stage2", default="",
@@ -613,9 +660,10 @@ def main() -> int:
             if not os.path.exists(_pth):
                 continue
             _dft = pd.read_csv(_pth)
-            _fs0, _fc0, _fz0 = _flatten_questions(_dft)
-            _own = _features_from_flat(_fs0, _fc0, _fz0, with_opponent=False)
-            ct_plan[_tg] = _crosstask_games(_tg, _own, args, metric_ct)
+            # 度量學習模型可能用多份特徵庫訓練（例如加了棋形統計），
+            # 所以這裡要照它 checkpoint 記的組合重算，不能只給我方 589 維。
+            _qf = _metric_question_features(_dft, metric_ct[4])
+            ct_plan[_tg] = _crosstask_games(_tg, _qf, args, metric_ct)
         if not ct_plan or any(v is None for v in ct_plan.values()):
             print("  跨子題增強：至少一個測試池沒通過判準 → **兩池都不套用**"
                   "（校準只有一份，兩池必須用同一種證據結構）", flush=True)
@@ -831,14 +879,15 @@ def main() -> int:
         cand = pd.read_csv(os.path.join(
             args.test_dir, f"player_identification_candidates_{tag}.csv"))
         t0 = time.time()
-        Xc, okc = parallel_batch_features(cand["sgf_content"].tolist(),
-                                          cand["color"].tolist())
+        _mstores = metric[4] if metric is not None else ["cache/features.npy"]
+        Xc, okc = _metric_features(cand["sgf_content"].tolist(),
+                                   cand["color"].tolist(), _mstores)
         names = sorted(cand["player_id"].unique())
         pid = cand["player_id"].to_numpy()
 
         if metric is not None:
             from aicup.feature_metric import embed_features, player_template
-            models, scaler, mdev, cols = metric
+            models, scaler, mdev, cols, _ = metric
 
             def make_tpl(A):
                 if cols is not None:
@@ -856,7 +905,7 @@ def main() -> int:
 
         df = pd.read_csv(os.path.join(
             args.test_dir, f"player_identification_test_{tag}.csv"))
-        feats = _question_features(df)
+        feats = _metric_question_features(df, _mstores)
         Q = np.stack([make_tpl(f) if len(f) else np.zeros(G.shape[1]) for f in feats])
         sim = Q @ G.T
         if args.stage2 and os.path.exists(args.stage2):
