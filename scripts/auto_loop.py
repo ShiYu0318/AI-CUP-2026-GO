@@ -94,9 +94,15 @@ TRACKS = {
                "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
                         "--splits", "5", "--json-out", "artifacts/blend_default.json"],
                "json": "artifacts/blend_default.json"},
+    # ⚠️ 競賽一的預設已經換成棋形版（predict.py 的 --feature-metric），
+    # 所以基準也必須用棋形版量，否則候選會拿去比一個已經下線的設定。
     "player": {"baseline": 0.2845, "name": "競賽一 身分",
                "eval": ["python3", "scripts/eval_player.py", "--seeds", "3",
                         "--json-out", "artifacts/player_baseline.json"],
+               "env": {"AICUP_METRIC": "cache/feature_metric_shape/models.pt",
+                       "AICUP_PLAYER_FEATS":
+                           "cache/features.npy,cache/features_opp.npy,"
+                           "cache/features_shape.npy,cache/features_shape_opp.npy"},
                "json": "artifacts/player_baseline.json"},
 }
 
@@ -113,7 +119,8 @@ TRACKS = {
 #   5  production 改成**分軌**（競賽一/競賽二各一個），迴圈不再只能改進競賽二
 #   6  競賽二的預設集成加入 seq_shape（三變體 → 四變體）——
 #      基準的組成變了，舊的 production 就不能用了
-GATE_VERSION = 6
+#   7  競賽一的預設換成棋形版度量模型（0.9389 → 0.9653，最壞組成）
+GATE_VERSION = 7
 BASELINE = 0.4631      # 官方 baseline（競賽二）
 
 
@@ -288,6 +295,31 @@ EXPERIMENTS = [
         "json": "artifacts/player_shape.json",
     },
     {
+        "name": "metric_trans",
+        "track": "player",
+        "device": "cpu",
+        "mem_gb": 6.0,
+        "why": "棋形**頻率**讓競賽一從 0.9599 跳到 0.9745，最大增益在段位（+0.0264）"
+               "——因為風格不像品質那樣會隨棋力收斂。"
+               "把同一個邏輯再推一步：手法的**轉移**（接→跳、尖→飛）"
+               "比手法的頻率更能刻畫節奏。帳本裡最強的身分特徵"
+               "「開局轉移族」就是同一類東西（順序 one-hot 0.6603 → 加轉移 0.7221）。"
+               "7×7=49 維／視角，從棋形庫用純 numpy 算，建庫只花 8 秒",
+        "train": ["python3", "scripts/train_feature_metric.py",
+                  "--extra-features", "cache/features_opp.npy",
+                  "cache/features_shape.npy", "cache/features_shape_opp.npy",
+                  "cache/features_shapetrans.npy",
+                  "cache/features_shapetrans_opp.npy",
+                  "--seeds", "3", "--device", "cpu",
+                  "--out", "cache/feature_metric_trans"],
+        "produces": "cache/feature_metric_trans/models.pt",
+        "eval": ["python3", "scripts/eval_player.py", "--seeds", "3",
+                 "--json-out", "artifacts/player_trans.json"],
+        "eval_env": {"AICUP_METRIC": "cache/feature_metric_trans/models.pt",
+                     "AICUP_PLAYER_FEATS": "cache/features.npy,cache/features_opp.npy,cache/features_shape.npy,cache/features_shape_opp.npy,cache/features_shapetrans.npy,cache/features_shapetrans_opp.npy"},
+        "json": "artifacts/player_trans.json",
+    },
+    {
         "name": "seq_gru",
         "device": "cpu",
         "mem_gb": 5.0,
@@ -425,7 +457,7 @@ def main() -> int:
             continue
         spec = TRACKS[tr]
         log(f"[{spec['name']}] 尚無生產分數，先跑一次目前的預設組合建立基準…")
-        rc, out = run(spec["eval"])
+        rc, out = run(spec["eval"], env_extra=spec.get("env"))
         if rc != 0:
             log(f"基準評估失敗：\n{out[-1500:]}")
             return 1
