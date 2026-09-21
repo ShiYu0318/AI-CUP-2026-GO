@@ -407,17 +407,23 @@ def main() -> int:
             log(f"  - {e['name']}：{e['why']}")
         return 0
 
-    if st["production"] is None:
-        log("尚無生產分數，先跑一次目前的預設組合建立基準…")
-        rc, out = run(["python3", "scripts/eval_blend.py", "--seeds", "8", "--splits", "5",
-                       "--json-out", "artifacts/blend_default.json"])
+    # 只為佇列裡真的用得到的軌道建立基準（每個都要跑好幾分鐘，不要多算）。
+    # ⚠️ 判斷要用 `.get(tr) is None`，不是 `st["production"] is None`——
+    # 分軌之後 production 是 dict，空 dict 不是 None，
+    # 寫錯的話基準量測會被**靜默跳過**，然後在 gate 時 KeyError。
+    for tr in sorted({e.get("track", "rank") for e in queue}):
+        if st["production"].get(tr) is not None:
+            continue
+        spec = TRACKS[tr]
+        log(f"[{spec['name']}] 尚無生產分數，先跑一次目前的預設組合建立基準…")
+        rc, out = run(spec["eval"])
         if rc != 0:
             log(f"基準評估失敗：\n{out[-1500:]}")
             return 1
-        with open(os.path.join(ROOT, "artifacts/blend_default.json")) as f:
-            st["production"] = json.load(f)["best_score"]
+        with open(os.path.join(ROOT, spec["json"])) as f:
+            st["production"][tr] = json.load(f)["best_score"]
         save_state(st)
-        log(f"生產分數 = {st['production']:.4f}")
+        log(f"[{spec['name']}] 生產分數 = {st['production'][tr]:.4f}")
 
     budget = args.mem_budget or total_memory_gb() * 0.65
     log(f"記憶體預算 {budget:.1f} GB（實體 {total_memory_gb():.0f} GB），"

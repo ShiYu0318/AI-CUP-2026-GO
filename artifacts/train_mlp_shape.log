@@ -4,3 +4,8 @@ device = cpu
   seed 0 loss 1.8847 (15.9 分)
   seed 1 loss 1.8683 (14.8 分)
   seed 2 loss 1.8737 (70.4 分)
+  seed 3 loss 1.8907 (19.8 分)
+  seed 4 loss 1.8734 (14.7 分)
+
+期望解碼 0.4767 ／ 切點解碼 0.5414（官方 baseline 0.4631）
+已寫出 cache/rank_mlp_shape/models.pt
