@@ -1,0 +1,6 @@
+基礎集成 3 個，候選 4 個
+    [快取命中] game__rank_mlp_opp_big q526440dd33eddd0f
+    [快取命中] question__rank_question_opp q526440dd33eddd0f
+    [快取命中] seq_rank_seq_opp__rank_seq_opp q526440dd33eddd0f
+    [快取命中] seq_rank_seq_opp_full__rank_seq_opp_full q526440dd33eddd0f
+    [快取命中] seq_rank_seq_w192__rank_seq_w192 q526440dd33eddd0f

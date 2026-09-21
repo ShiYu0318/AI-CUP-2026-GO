@@ -241,6 +241,7 @@ def pool_summary(pool: PlayerPool) -> pd.DataFrame:
         })
     return pd.DataFrame(rows)
 
+
 def rank_prior(name: str, meta, n_levels: int = None) -> np.ndarray | None:
     """回傳一個目標等級先驗。`"natural"` 回傳 None（代表「照資料本來的分布」）。
 
