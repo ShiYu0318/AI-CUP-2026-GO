@@ -81,7 +81,9 @@ FLOOR = 0.005          # 小於這個增益不算贏（seed 間標準差約 ±0.
 #   1  固定權重融合
 #   2  學習式融合（stacker）取代固定權重
 #   3  gate 改為「候選 + 現有三變體集成」——單獨比 base 會系統性拒絕好的集成成員
-GATE_VERSION = 3
+#   4  每組題目改用 5 種校準/評分切分取平均——seed 層級標準差 ±0.0102 → ±0.0060，
+#      統計力接近翻倍而成本幾乎為零（後驗是共用且快取的）
+GATE_VERSION = 4
 BASELINE = 0.4631      # 官方 baseline（競賽二）
 
 
@@ -126,7 +128,7 @@ EXPERIMENTS = [
                   "--seeds", "3", "--steps", "12000", "--train-games", "400000",
                   "--out", "cache/rank_seq_shape"],
         "produces": "cache/rank_seq_shape/models.pt",
-        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8", "--splits", "5",
                  "--json-out", "artifacts/blend_seqshape.json"],
         "eval_env": {"AICUP_SEQ_EXTRA": "cache/rank_seq_shape/models.pt",
                      "AICUP_SEQ_EXTRA_STORES": "cache/sequences.npy,cache/sequences_opp.npy,"
@@ -148,7 +150,7 @@ EXPERIMENTS = [
                   "--train-games", "0", "--device", "cpu",
                   "--out", "cache/rank_mlp_shape"],
         "produces": "cache/rank_mlp_shape/models.pt",
-        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8", "--splits", "5",
                  "--json-out", "artifacts/blend_mlpshape.json"],
         # 單局模型是**取代**不是附加——它在 stacker 裡只有一個成分，
         # 而且新舊兩版讀的特徵維度不同，不可能同時存在。
@@ -173,7 +175,7 @@ EXPERIMENTS = [
                   "--seeds", "3", "--device", "cpu",
                   "--out", "cache/rank_question_shape"],
         "produces": "cache/rank_question_shape/models.pt",
-        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8", "--splits", "5",
                  "--json-out", "artifacts/blend_qshape.json"],
         # AICUP_FEATS 換題目層級那一邊；AICUP_GAME_FEATS 明確釘回原本的，
         # 免得單局模型也跟著換掉（那樣就分不清增益是誰的）。
@@ -197,7 +199,7 @@ EXPERIMENTS = [
                   "--rank-loss", "0.3", "--seeds", "3", "--steps", "12000",
                   "--train-games", "400000", "--out", "cache/rank_seq_rankloss"],
         "produces": "cache/rank_seq_rankloss/models.pt",
-        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8", "--splits", "5",
                  "--json-out", "artifacts/blend_seqrankloss.json"],
         "eval_env": {"AICUP_SEQ_EXTRA": "cache/rank_seq_rankloss/models.pt"},
         "json": "artifacts/blend_seqrankloss.json",
@@ -216,7 +218,7 @@ EXPERIMENTS = [
                   "--train-games", "400000", "--device", "cpu",
                   "--out", "cache/rank_seq_gru_shape"],
         "produces": "cache/rank_seq_gru_shape/models.pt",
-        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8", "--splits", "5",
                  "--json-out", "artifacts/blend_seqgrushape.json"],
         "eval_env": {"AICUP_SEQ_EXTRA": "cache/rank_seq_gru_shape/models.pt",
                      "AICUP_SEQ_EXTRA_STORES": "cache/sequences.npy,cache/sequences_opp.npy,"
@@ -238,7 +240,7 @@ EXPERIMENTS = [
                   "--train-games", "400000", "--device", "cpu",
                   "--out", "cache/rank_seq_gru"],
         "produces": "cache/rank_seq_gru/models.pt",
-        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8", "--splits", "5",
                  "--json-out", "artifacts/blend_seqgru.json"],
         "eval_env": {"AICUP_SEQ_EXTRA": "cache/rank_seq_gru/models.pt"},
         "json": "artifacts/blend_seqgru.json",
@@ -351,7 +353,7 @@ def main() -> int:
 
     if st["production"] is None:
         log("尚無生產分數，先跑一次目前的預設組合建立基準…")
-        rc, out = run(["python3", "scripts/eval_blend.py", "--seeds", "8",
+        rc, out = run(["python3", "scripts/eval_blend.py", "--seeds", "8", "--splits", "5",
                        "--json-out", "artifacts/blend_default.json"])
         if rc != 0:
             log(f"基準評估失敗：\n{out[-1500:]}")

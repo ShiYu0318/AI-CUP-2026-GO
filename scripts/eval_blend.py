@@ -203,6 +203,12 @@ def score_blend(parts, weights, y, cal, sco, stacker_c=0.0, sizes=None):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seeds", type=int, default=8, help="題目抽樣的 seed 數")
+    ap.add_argument("--splits", type=int, default=1,
+                    help="每組題目用幾種**校準/評分玩家切分**重複量測。"
+                         "後驗是共用且快取的，所以多切分幾乎免費，"
+                         "但它移掉了一個真實的雜訊來源——實測 seed 層級標準差"
+                         "從 ±0.0102 降到 ±0.0060（5 個切分）。"
+                         "⚠️ 改這個會改變分數的絕對值，換 gate 時記得 bump GATE_VERSION")
     ap.add_argument("--warm", action="store_true", help="只算後驗並存快取，不評估")
     ap.add_argument("--sweep", choices=["seq", "question"], default=None)
     ap.add_argument("--grid", type=float, nargs="*", default=None)
@@ -248,28 +254,39 @@ def main() -> int:
             continue
 
         up = np.array(sorted(set(pid)))
-        rr = np.random.default_rng(1000 + seed); rr.shuffle(up)
-        cs = set(up[:len(up) // 2].tolist())
-        inc = np.array([p in cs for p in pid])
-        cal, sco = np.flatnonzero(inc), np.flatnonzero(~inc)
-
         sizes = np.array([len(r) for r in q.game_rows], dtype=np.float64)
+        splits = []
+        for sp in range(max(args.splits, 1)):
+            rr = (np.random.default_rng(1000 + seed) if args.splits <= 1
+                  else np.random.default_rng(90000 + 31 * seed + sp))
+            u = up.copy(); rr.shuffle(u)
+            cs = set(u[:len(u) // 2].tolist())
+            inc = np.array([p in cs for p in pid])
+            splits.append((np.flatnonzero(inc), np.flatnonzero(~inc)))
+
+        def _avg(fn):
+            """多個切分的平均。切分之間共用同一組題目與後驗，
+            所以這只移掉「誰去校準」的雜訊，不是憑空多出獨立樣本。"""
+            return float(np.mean([fn(c, s_) for c, s_ in splits]))
+
+        cal, sco = splits[0]
         if args.sweep:
             grid = args.grid or [0.0, 0.2, 0.4, 0.6, 0.8]
             for w in grid:
                 ws = {"question": args.w_question, "seq": args.w_seq}
                 ws[args.sweep] = w
                 rows.setdefault(f"{args.sweep} w={w}", []).append(
-                    score_blend(parts, ws, y, cal, sco))
+                    _avg(lambda c, s_, w_=ws: score_blend(parts, w_, y, c, s_)))
         else:
             for label, ws in (("只有單局", {}),
                               ("固定權重融合", {"question": args.w_question,
                                            "seq": args.w_seq})):
-                rows.setdefault(label, []).append(score_blend(parts, ws, y, cal, sco))
+                rows.setdefault(label, []).append(
+                    _avg(lambda c, s_, w_=ws: score_blend(parts, w_, y, c, s_)))
             if args.stacker > 0:
                 rows.setdefault("學習式融合（預設）", []).append(
-                    score_blend(parts, {}, y, cal, sco,
-                                stacker_c=args.stacker, sizes=sizes))
+                    _avg(lambda c, s_: score_blend(parts, {}, y, c, s_,
+                                                   stacker_c=args.stacker, sizes=sizes)))
         print(f"  seed {seed}  " + "  ".join(f"{k}:{v[-1]:.4f}" for k, v in rows.items()),
               flush=True)
 
