@@ -53,6 +53,14 @@
       "score": 0.586018969868954,
       "gain": 0.0018296339063605949,
       "won": false
+    },
+    "question_shape": {
+      "status": "train_failed"
+    },
+    "mlp_shape": {
+      "score": 0.5899760985346411,
+      "gain": 0.0010674429697725696,
+      "won": false
     }
   },
   "note": "0.5715 是**學習式融合**下的分數。gate 已對齊 predict.py，兩邊同一把尺。",
