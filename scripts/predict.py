@@ -277,6 +277,8 @@ SEQ_VIEWS = {
     "sequences_opp.npy":   ("move", True, 160),
     "seqshape.npy":        ("shape", False, 160),
     "seqshape_opp.npy":    ("shape", True, 160),
+    "seqqual.npy":         ("quality", False, 160),
+    "seqqual_opp.npy":     ("quality", True, 160),
     "sequences240.npy":    ("move", False, 240),
     "sequences240_opp.npy": ("move", True, 240),
 }
@@ -327,11 +329,13 @@ def _sequences_from_flat(flat_sgf, flat_col, sizes, views) -> list:
     from aicup.goboard import BLACK
     from aicup.moveseq import batch_move_sequences
     from aicup.moveshape import batch_shape_sequences
+    from aicup.movequality import batch_quality_sequences
 
+    _FN = {"shape": batch_shape_sequences, "quality": batch_quality_sequences}
     flip = ["W" if normalise_color(c) == BLACK else "B" for c in flat_col]
     parts, ok = [], None
     for kind, opp, mm in views:
-        fn = batch_shape_sequences if kind == "shape" else batch_move_sequences
+        fn = _FN.get(kind, batch_move_sequences)
         A, m = fn(flat_sgf, flip if opp else flat_col, max_moves=mm)
         parts.append(A)
         ok = m if ok is None else (ok & m)        # 任一視角失敗就整局不用
@@ -634,7 +638,10 @@ def main() -> int:
             sck = torch.load(path, map_location=seq_dev, weights_only=False)
             nets = []
             _views = _views_of(sck["args"])
-            _nfeat = 12 * len(_views)
+            # ⚠️ 不能再假設「每個視角 12 維」——品質視角是 8 維。
+            # 由實際的序列庫去問，錯了 load_state_dict 會直接拋錯。
+            _nfeat = sum(int(np.load(x, mmap_mode="r").shape[-1])
+                         for x in _store_paths(_views))
             for sd in sck["models"]:
                 n = build_seq_net(_nfeat, sck["args"])
                 n.load_state_dict(sd); n.eval().to(seq_dev)

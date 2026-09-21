@@ -34,6 +34,8 @@ from aicup.moveseq import (MAX_MOVES, N_MOVE_FEATURES,         # noqa: E402
                            batch_move_sequences)
 from aicup.moveshape import (N_SHAPE_FEATURES,                 # noqa: E402
                              batch_shape_sequences)
+from aicup.movequality import (N_QUALITY_FEATURES,             # noqa: E402
+                               batch_quality_sequences)
 
 CACHE_DIR = "cache"
 
@@ -43,13 +45,14 @@ def _flip(colors):
 
 
 def _worker(args):
-    file_idx, path, limit, opponent, max_moves, shape = args
+    file_idx, path, limit, opponent, max_moves, kind = args
     d = pd.read_csv(path, usecols=["color", "sgf_content"], nrows=limit)
     colors = d["color"].tolist()
     if opponent:
         colors = _flip(colors)
     t0 = time.time()
-    fn = batch_shape_sequences if shape else batch_move_sequences
+    fn = {"shape": batch_shape_sequences,
+          "quality": batch_quality_sequences}.get(kind, batch_move_sequences)
     S, ok = fn(d["sgf_content"].tolist(), colors, max_moves=max_moves)
     np.savez(os.path.join(CACHE_DIR, f"_seq{file_idx:02d}.npz"), S=S, ok=ok)
     return file_idx, len(d), int(ok.sum()), time.time() - t0
@@ -66,13 +69,20 @@ def main() -> int:
     ap.add_argument("--max-moves", type=int, default=MAX_MOVES,
                     help="每局取前幾手。預設 160；棋局手數中位數約 200，"
                          "所以預設會截掉尾盤")
+    ap.add_argument("--quality", action="store_true",
+                    help="改抽**局面判斷品質**序列（movequality，8 維）。"
+                         "序列模型目前看不到 territory / invade（相關 −0.959 / +0.953，"
+                         "是整個特徵集裡最強的兩個），也看不到打吃、連接、減氣")
     ap.add_argument("--shape", action="store_true",
                     help="改抽**棋形**序列（moveshape，12 維）而不是 moveseq 的 12 維。"
                          "手法類別（接／尖／跳／飛）取代曼哈頓距離——"
                          "尖與跳的曼哈頓距離都是 2，在 moveseq 裡被混為一談")
     ap.add_argument("--out", default="cache/sequences.npy")
     args = ap.parse_args()
-    if args.shape and args.out == "cache/sequences.npy":
+    kind = "quality" if args.quality else ("shape" if args.shape else "move")
+    if args.quality and args.out == "cache/sequences.npy":
+        args.out = "cache/seqqual_opp.npy" if args.opponent else "cache/seqqual.npy"
+    elif args.shape and args.out == "cache/sequences.npy":
         args.out = "cache/seqshape_opp.npy" if args.opponent else "cache/seqshape.npy"
     elif args.opponent and args.out == "cache/sequences.npy":
         args.out = "cache/sequences_opp.npy"
@@ -85,7 +95,7 @@ def main() -> int:
 
     os.makedirs(CACHE_DIR, exist_ok=True)
     files = training_files(args.training_dir)
-    jobs = [(i, p, args.limit, args.opponent, args.max_moves, args.shape)
+    jobs = [(i, p, args.limit, args.opponent, args.max_moves, kind)
             for i, p in enumerate(files)]
 
     t0 = time.time()
@@ -99,7 +109,8 @@ def main() -> int:
         z = np.load(os.path.join(CACHE_DIR, f"_seq{fi:02d}.npz"))
         parts.append(z["S"]); oks.append(z["ok"])
     S = np.concatenate(parts); ok = np.concatenate(oks)
-    n_out = N_SHAPE_FEATURES if args.shape else N_MOVE_FEATURES
+    n_out = {"shape": N_SHAPE_FEATURES, "quality": N_QUALITY_FEATURES}.get(
+        kind, N_MOVE_FEATURES)
     assert S.shape[1:] == (args.max_moves, n_out)
 
     np.save(args.out, S)

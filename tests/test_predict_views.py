@@ -64,3 +64,16 @@ def test_store_paths_roundtrip():
 def test_view_table_has_no_duplicate_specs():
     """兩個檔名對到同一個 spec 的話，`_store_paths` 的反查會對錯庫。"""
     assert len(set(SEQ_VIEWS.values())) == len(SEQ_VIEWS)
+
+
+def test_quality_views_are_recognised():
+    """品質視角是 **8 維**，不是 12——`_nfeat` 不能再假設每個視角同寬。"""
+    v = _views_of({"sequences": "cache/sequences.npy",
+                   "extra_sequences": ["cache/sequences_opp.npy",
+                                       "cache/seqshape.npy",
+                                       "cache/seqshape_opp.npy",
+                                       "cache/seqqual.npy",
+                                       "cache/seqqual_opp.npy"]})
+    assert [k for k, _, _ in v] == ["move", "move", "shape", "shape",
+                                    "quality", "quality"]
+    assert _store_paths(v)[-1] == "cache/seqqual_opp.npy"

@@ -320,6 +320,30 @@ EXPERIMENTS = [
         "json": "artifacts/player_trans.json",
     },
     {
+        "name": "seq_quality",
+        "device": "mps",
+        "mem_gb": 12.0,
+        "why": "**補上序列模型看不到的最強訊號**。features.py 裡相關係數最高的是"
+               "territory_rate（−0.959）與 invade_rate（+0.953），"
+               "而序列模型完全看不到它們；愚形（−0.936）已經靠棋形補上、"
+               "提子（+0.654）本來就有。再加上無法從既有 24 維推導的"
+               "打吃、連接、減氣與半徑 3 的厚薄——8 維／視角。"
+               "這是「統計摘要丟掉了什麼時候發生」的同一個論證："
+               "在自己地裡補棋，發生在布局是厚實、發生在收官是浪費",
+        "train": ["python3", "scripts/train_rank_seq.py",
+                  "--extra-sequences", "cache/sequences_opp.npy",
+                  "cache/seqshape.npy", "cache/seqshape_opp.npy",
+                  "cache/seqqual.npy", "cache/seqqual_opp.npy",
+                  "--seeds", "3", "--steps", "12000", "--train-games", "400000",
+                  "--out", "cache/rank_seq_qual"],
+        "produces": "cache/rank_seq_qual/models.pt",
+        "eval": ["python3", "scripts/eval_blend.py", "--seeds", "8", "--splits", "5",
+                 "--json-out", "artifacts/blend_seqqual.json"],
+        "eval_env": {"AICUP_SEQ_EXTRA": "cache/rank_seq_qual/models.pt",
+                     "AICUP_SEQ_EXTRA_STORES": "cache/sequences.npy,cache/sequences_opp.npy,cache/seqshape.npy,cache/seqshape_opp.npy,cache/seqqual.npy,cache/seqqual_opp.npy"},
+        "json": "artifacts/blend_seqqual.json",
+    },
+    {
         "name": "seq_gru",
         "device": "cpu",
         "mem_gb": 5.0,
