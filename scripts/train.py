@@ -25,6 +25,7 @@ import time
 import numpy as np
 import torch
 import torch.nn.functional as F
+from scipy.stats import spearmanr
 from torch.utils.data import DataLoader
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -73,9 +74,19 @@ def evaluate_rank(model, meta, questions, device, n_snapshots: int, max_q: int =
             ys.append(y.numpy())
     model.train(was_training)
     P = np.concatenate(probs); Y = np.concatenate(ys)
+    # ⚠️ **選 checkpoint 要看 Spearman，不是解碼後的分數。**
+    # 這個模型的輸出尺度會崩（實測期望等級全擠在 [2.48, 2.55]、
+    # argmax 永遠指向同一級），所以 score_expected 停在常數預測器的水準，
+    # 完全反映不出它有沒有學到東西——實測那個狀態下 Spearman 已經 0.75。
+    # 而它在集成裡的用法是「交給 stacker ＋ DP 切點」，
+    # 那只要求**單調**，不要求校準。用 score_expected 選 checkpoint
+    # 等於在挑雜訊。
+    ev = (P * np.arange(P.shape[1])).sum(axis=1)
+    rho = float(spearmanr(ev, Y).statistic) if len(set(Y.tolist())) > 1 else 0.0
     return {
         "score_argmax": rank_final_score(decode_argmax(P), Y),
         "score_expected": rank_final_score(decode_expected_score(P), Y),
+        "spearman": rho,
         "n_questions": int(len(Y)),
     }
 
@@ -316,11 +327,12 @@ def main() -> int:
             print(f"  step {step:>6} loss {rec['loss']:.4f}"
                   f" (rank {rec['loss_rank']:.3f} corn {rec['loss_corn']:.3f}"
                   f" arc {rec['loss_arc']:.3f})"
+                  f" | Spearman {ev['spearman']:.4f}"
                   f" | 題目分數 期望解碼 {ev['score_expected']:.4f}"
                   f" argmax {ev['score_argmax']:.4f}"
                   f" | {rec['minutes']:.1f} 分", flush=True)
-            if ev["score_expected"] > best:
-                best = ev["score_expected"]
+            if ev["spearman"] > best:
+                best = ev["spearman"]
                 torch.save({"model": model.state_dict(), "args": vars(args),
                             # 重建模型所需的完整設定。只存 args 是不夠的——
                             # pool / global_pool_bias 曾經漏存，害重新載入時只能猜。
@@ -344,7 +356,7 @@ def main() -> int:
 
     with open(os.path.join(args.out, "history.json"), "w") as f:
         json.dump(history, f, indent=2)
-    print(f"\n完成。最佳題目層級分數（期望解碼）{best:.4f}")
+    print(f"\n完成。最佳 Spearman（期望等級 vs 真實等級）{best:.4f}")
     return 0
 
 
