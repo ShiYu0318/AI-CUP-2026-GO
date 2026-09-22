@@ -5,6 +5,15 @@
   - 每人另取 5~20 局（與候選庫不重疊）當成一道題
   - 交出 Top-5，用官方公式 e^-(r-1) 計分
 這就是可以在 11/04 之前（沒有 leaderboard 的 67 天）用來判斷進步與否的離線指標。
+
+⚠️ **2026-09-18 的早期探索腳本，已被函式庫取代，目前沒有任何程式引用它。**
+留著是因為它是競賽一離線驗證協定的原始證據；
+該協定現在長在 `src/aicup/benchmark.py` 的 `build_player_pool()`
+與 `scripts/eval_player.py` 裡。結論見 RESULTS.md §1.3。
+它不依賴 `src/aicup/`（只用 numpy/pandas），可以獨立重跑：
+    python3 scripts/playerid_floor.py 4000
+⚠️ 它的評估協定是**當時**的版本（題目局數分布 2026-09-20 才改成官方的
+5/10/15/20），所以**絕對數字不能與現在的比較**——價值在方法論的證據。
 """
 import glob, re, sys, numpy as np, pandas as pd
 from collections import defaultdict

@@ -1,6 +1,12 @@
 """手工特徵 + GBDT 的棋力預測地板實驗。
 目的：(1) 測出不用深度學習能到多少分  (2) 實證「期望分數解碼」相對 argmax 的增益
 驗證協定：player-disjoint split（模擬 Private LB 的未見玩家）
+
+⚠️ **2026-09-18 的早期探索腳本，已被取代，目前沒有任何程式引用它。**
+結論已進 RESULTS.md：解碼器比較見 §2.3、XGBoost vs MLP 見 §3.2。
+現行的 GBDT 實作在 `scripts/train_gbdt_ensemble.py`。
+它不依賴 `src/aicup/`，可獨立重跑；但評估協定是當時的版本，
+**絕對數字不能與現在的比較**。
 """
 import glob, re, sys, numpy as np, pandas as pd
 from collections import defaultdict

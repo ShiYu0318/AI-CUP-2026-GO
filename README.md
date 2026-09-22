@@ -24,10 +24,11 @@
 > ⚠️ **程式碼註解裡的 `docs/02 §X` 是本機文件，不在這個 repo 裡。**
 > `docs/` 刻意列在 `.gitignore`（分析文件留在本機）。
 > 全 repo 有約 20 處這樣的引用——**對 clone 這個 repo 的人來說那些證據鏈是斷的**。
-> 可追溯的實驗紀錄一律以 **[RESULTS.md](RESULTS.md)** 為準；
-> 早期（2026-09-18）的原始探索腳本在 **[`scripts/legacy/`](scripts/legacy/)**，
-> 其中 `generalization_audit.py` 是 `dataset.py` 至今仍在用的
-> 8 重對稱增強的證據來源。
+> 可追溯的實驗紀錄一律以 **[RESULTS.md](RESULTS.md)** 為準。
+> 早期（2026-09-18）的原始探索腳本留在 `scripts/` 裡
+>（`playerid_floor.py` / `gbdt_floor.py` / `generalization_audit.py`，
+> 檔案開頭都標明了狀態）——其中 `generalization_audit.py` 是
+> `dataset.py` 至今仍在用的 8 重對稱增強的證據來源，不要刪。
 
 ## 設計原則
 
