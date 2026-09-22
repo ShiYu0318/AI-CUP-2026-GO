@@ -21,6 +21,14 @@
 > 不在解碼、不在聚合、不在後處理。詳見 [RESULTS.md §2.10](RESULTS.md)。
 📋 **[RUNBOOK.md](RUNBOOK.md) —— 比賽當天操作手冊**。
 
+> ⚠️ **程式碼註解裡的 `docs/02 §X` 是本機文件，不在這個 repo 裡。**
+> `docs/` 刻意列在 `.gitignore`（分析文件留在本機）。
+> 全 repo 有約 20 處這樣的引用——**對 clone 這個 repo 的人來說那些證據鏈是斷的**。
+> 可追溯的實驗紀錄一律以 **[RESULTS.md](RESULTS.md)** 為準；
+> 早期（2026-09-18）的原始探索腳本在 **[`scripts/legacy/`](scripts/legacy/)**，
+> 其中 `generalization_audit.py` 是 `dataset.py` 至今仍在用的
+> 8 重對稱增強的證據來源。
+
 ## 設計原則
 
 這個 repo 的所有程式都圍繞三條原則，而三條都來自對官方 baseline 的實測缺陷：
