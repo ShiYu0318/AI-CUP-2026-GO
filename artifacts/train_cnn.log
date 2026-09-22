@@ -1,0 +1,21 @@
+device = mps
+訓練局數 783,582，訓練身分 6,405
+棋形品質輔助目標 6 維：empty_triangle, abandon_atari, atari_given_rate, wasted_fill, contact_early, cap_per_move
+參數量 backbone 5,003,034 / arcface 7,378,560
+  step   2000 loss 2.7944 (rank 2.270 corn 0.500 arc 14.663) | 題目分數 期望解碼 0.2684 argmax 0.2684 | 14.9 分
+  step   4000 loss 2.6125 (rank 2.233 corn 0.416 arc 14.558) | 題目分數 期望解碼 0.1937 argmax 0.1422 | 29.5 分
+  step   6000 loss 2.5459 (rank 2.207 corn 0.436 arc 14.924) | 題目分數 期望解碼 0.2574 argmax 0.2557 | 43.6 分
+  step   8000 loss 2.4482 (rank 2.133 corn 0.397 arc 13.833) | 題目分數 期望解碼 0.2684 argmax 0.2684 | 57.7 分
+  step  10000 loss 2.9150 (rank 2.156 corn 0.549 arc 15.282) | 題目分數 期望解碼 0.2684 argmax 0.2684 | 72.2 分
+  step  12000 loss 2.7355 (rank 2.131 corn 0.471 arc 14.659) | 題目分數 期望解碼 0.1435 argmax 0.1435 | 86.9 分
+  step  14000 loss 2.7765 (rank 2.252 corn 0.483 arc 13.634) | 題目分數 期望解碼 0.2557 argmax 0.2684 | 101.5 分
+  step  16000 loss 2.4813 (rank 2.081 corn 0.406 arc 15.108) | 題目分數 期望解碼 0.2557 argmax 0.2557 | 116.2 分
+  step  18000 loss 2.7138 (rank 2.165 corn 0.490 arc 13.931) | 題目分數 期望解碼 0.1937 argmax 0.1937 | 130.7 分
+  step  20000 loss 2.6794 (rank 2.171 corn 0.492 arc 15.387) | 題目分數 期望解碼 0.1937 argmax 0.1422 | 145.2 分
+  step  22000 loss 2.9694 (rank 2.104 corn 0.622 arc 14.885) | 題目分數 期望解碼 0.2557 argmax 0.2557 | 159.7 分
+  step  24000 loss 2.7647 (rank 2.152 corn 0.480 arc 14.432) | 題目分數 期望解碼 0.2557 argmax 0.2557 | 174.3 分
+  step  26000 loss 2.6570 (rank 2.194 corn 0.430 arc 14.585) | 題目分數 期望解碼 0.1937 argmax 0.1422 | 189.0 分
+  step  28000 loss 2.8086 (rank 2.105 corn 0.538 arc 14.587) | 題目分數 期望解碼 0.1937 argmax 0.1422 | 203.3 分
+  step  30000 loss 2.7780 (rank 2.047 corn 0.537 arc 14.353) | 題目分數 期望解碼 0.1937 argmax 0.1422 | 217.5 分
+
+完成。最佳題目層級分數（期望解碼）0.2684
