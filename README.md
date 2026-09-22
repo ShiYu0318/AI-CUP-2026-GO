@@ -79,7 +79,8 @@ src/aicup/
 ├── rerank.py         Sinkhorn 全域指派、一一對應一致性
 ├── dataset.py        PyTorch 資料集、P×K 取樣器、8 相位對稱增強
 ├── losses.py         指數 soft label、CORN、成對排序、sub-center ArcFace
-├── nets.py           共用 backbone 的多任務網路（GeM + BN-Neck + Set Transformer）
+├── nets.py           板面 CNN：共用 backbone 的多任務網路（GeM + BN-Neck + Set Transformer）
+├── rank_nets.py      競賽二的單局 MLP 與逐手序列模型（CNN / GRU）＋題目層級推論
 ├── experiment_log.py 統一的實驗紀錄（含機器時間）
 └── submission.py     提交檔產生與官方格式驗證
 
@@ -101,7 +102,14 @@ scripts/                          # 31 支，以下是主要的
 
 ## 工程實踐
 
-這個專案的瓶頸不是想法，是**迭代速度**與**不被自己騙**。所以：
+**分層**：`src/aicup/` 是可匯入的函式庫，定義「什麼是正確的」——評分公式、
+棋盤規則、切分協定、模型結構；沒有 CLI，被 22 個測試模組直接匯入。
+`scripts/` 是可執行的流程，每支做一件事，31 支裡 28 支有 `__main__`。
+**依賴是單向的**：`src/` 從不 import `scripts/`，而
+`tests/test_layering.py` 會擋住這條界線再度漂移（它曾經漂移過一次：
+模型定義住在訓練腳本裡，害得產生提交檔的 `predict.py` 依賴訓練腳本）。
+
+其餘的瓶頸不是想法，是**迭代速度**與**不被自己騙**。所以：
 
 - **量測協定寫死在程式裡。** 題目層級、player-disjoint、官方局數分布、
   校準與評分的玩家不重疊——不照這個量的數字不進紀錄。
@@ -151,9 +159,6 @@ Top-5 必須相異、且 `pub_` 題目只能填 `pub_p_` 開頭的玩家（跨�
 `aicup.submission` 把這些規則寫成會丟例外的驗證函數，驗證不過就不寫檔。
 
 ## 沒有本機 GPU
-
-現成的 Kaggle notebook：[`notebooks/kaggle_train.ipynb`](notebooks/kaggle_train.ipynb)
-（上傳到 Kaggle → Settings 開 GPU 與 Internet → Save & Run All 即可跑 12 小時）。
 
 `train.py --resume` 可從斷線處接回（還原模型 / ArcFace head / optimizer / scheduler）。
 ⚠️ `--workers` 請留 0：每個 DataLoader worker 會各自載入全部 10 份 CSV，

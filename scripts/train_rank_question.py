@@ -32,7 +32,8 @@ from aicup.question_model import build_question_features, blend_log_posteriors  
 from aicup.scoring import (rank_final_score, apply_temperature,    # noqa: E402
                            fit_temperature, optimise_thresholds,
                            apply_thresholds, expected_level)
-from train_rank_mlp import RankMLP, question_posteriors, pick_device  # noqa: E402
+from aicup.rank_nets import (RankMLP, pick_device,                 # noqa: E402
+                             mlp_question_posteriors as question_posteriors)
 
 
 class _TrainPlayerSplit:

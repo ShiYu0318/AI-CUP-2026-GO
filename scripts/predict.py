@@ -669,7 +669,8 @@ def main() -> int:
         import torch
         from aicup.feature_metric import FeatureScaler
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        from train_rank_mlp import RankMLP, question_posteriors
+        from aicup.rank_nets import RankMLP
+        from aicup.rank_nets import mlp_question_posteriors as question_posteriors
         rdev = torch.device("cuda" if torch.cuda.is_available() else
                             "mps" if torch.backends.mps.is_available() else "cpu")
         ck = torch.load(args.rank_mlp, map_location=rdev, weights_only=False)
@@ -704,7 +705,7 @@ def main() -> int:
     if paths and args.seq_weight > 0:
         import torch
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        from train_rank_seq import build_seq_net
+        from aicup.rank_nets import build_seq_net
         seq_dev = torch.device("cuda" if torch.cuda.is_available() else
                                "mps" if torch.backends.mps.is_available() else "cpu")
         for path in paths:

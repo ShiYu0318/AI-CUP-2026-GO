@@ -30,6 +30,11 @@ from aicup.data import load_metadata, make_player_split          # noqa: E402
 from aicup.featstore import open_stores          # noqa: E402
 from aicup.benchmark import build_rank_questions                 # noqa: E402
 from aicup.feature_metric import FeatureScaler                   # noqa: E402
+# 模型定義與題目層級推論住在 `src/aicup/rank_nets.py`——推論路徑（predict.py）
+# 也要用，不該依賴訓練腳本。這裡 re-export，既有的 `from train_rank_mlp import
+# RankMLP` 仍然可用。
+from aicup.rank_nets import (RankMLP, pick_device,                # noqa: E402,F401
+                             mlp_question_posteriors as question_posteriors)
 from aicup.losses import (SoftLabelCrossEntropy, CornLoss,       # noqa: E402
                           PairwiseRankLoss, corn_to_proba)
 from aicup.scoring import (rank_final_score, apply_temperature,  # noqa: E402
@@ -37,66 +42,11 @@ from aicup.scoring import (rank_final_score, apply_temperature,  # noqa: E402
                            apply_thresholds, expected_level, decode_expected_score)
 
 
-class RankMLP(nn.Module):
-    """兩個 head：10 類 softmax（搭配指數 soft label）與 CORN 的 9 個條件輸出。"""
-
-    def __init__(self, d_in: int, hidden: int = 768, n_levels: int = 10,
-                 dropout: float = 0.3):
-        super().__init__()
-        self.body = nn.Sequential(
-            nn.Linear(d_in, hidden), nn.BatchNorm1d(hidden), nn.ReLU(), nn.Dropout(dropout),
-            nn.Linear(hidden, hidden), nn.BatchNorm1d(hidden), nn.ReLU(), nn.Dropout(dropout),
-            nn.Linear(hidden, hidden // 2), nn.BatchNorm1d(hidden // 2), nn.ReLU())
-        self.cls = nn.Linear(hidden // 2, n_levels)
-        self.corn = nn.Linear(hidden // 2, n_levels - 1)
-
-    def forward(self, x):
-        z = self.body(x)
-        return self.cls(z), self.corn(z)
 
 
-def pick_device(name: str):
-    if name != "auto":
-        return torch.device(name)
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
 
 
 @torch.no_grad()
-def question_posteriors(nets, scaler, X, ok, game_rows, device, batch: int = 4096):
-    """逐題：多局後驗做幾何平均（實測 logmean 勝過算術平均 +0.030）。
-
-    ⚠️ 這個函式會暫時把模型切到 eval，結束時**還原成原本的模式**。
-    早期版本結尾是無條件 `n.train()`，害 predict.py 在校準之後
-    帶著 dropout 跑測試集推論：校準在 eval、預測在 train，
-    期望等級的標準差從 2.16 被壓到 0.25，切點完全遷移不過去
-    （端到端 0.33，內部驗證卻有 0.48）。
-    """
-    was_training = [n.training for n in nets]
-    for n in nets:
-        n.eval()
-    out = []
-    for rows in game_rows:
-        sel = rows[ok[rows]]
-        if len(sel) == 0:
-            out.append(np.full(10, 0.1)); continue
-        A = torch.from_numpy(scaler.transform(np.asarray(X[sel]))).to(device)
-        ps = []
-        for n in nets:
-            lc, lo = n(A)
-            p = F.softmax(lc, dim=-1).cpu().numpy()
-            pc = corn_to_proba(lo).cpu().numpy()
-            pc = pc / np.maximum(pc.sum(axis=1, keepdims=True), 1e-12)
-            ps.append(0.5 * p + 0.5 * pc)          # softmax 與 CORN 各半
-        p = np.mean(ps, axis=0)
-        g = np.exp(np.log(np.clip(p, 1e-12, None)).mean(axis=0))
-        out.append(g / g.sum())
-    for n, t in zip(nets, was_training):
-        n.train(t)
-    return np.stack(out)
 
 
 def main() -> int:

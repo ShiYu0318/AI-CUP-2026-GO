@@ -13,3 +13,6 @@ __pycache__/
 # 等於是 RESULTS.md 的另一份副本——只把 RESULTS.md 移到 docs/ 而留著這些，
 # 等於沒移。
 /artifacts/
+
+# notebooks/ 也不進 repo（Kaggle/Colab 訓練用的 notebook）
+/notebooks/

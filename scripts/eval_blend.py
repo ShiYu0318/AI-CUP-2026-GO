@@ -101,9 +101,9 @@ class Components:
 
     def __init__(self, device):
         self.dev = device
-        from train_rank_mlp import RankMLP, question_posteriors
-        from train_rank_seq import SeqStore, build_seq_net
-        from train_rank_seq import question_posteriors as seq_posteriors
+        from aicup.rank_nets import (RankMLP, SeqStore, build_seq_net,
+                                     mlp_question_posteriors as question_posteriors,
+                                     seq_question_posteriors as seq_posteriors)
         self._RankMLP, self._qp = RankMLP, question_posteriors
         self._SeqNet, self._SeqStore, self._sp = build_seq_net, SeqStore, seq_posteriors
         self._meta = None
