@@ -494,6 +494,9 @@ def check_artifacts(args) -> int:
                     add("　└ 它需要的序列庫", st, f"{os.path.basename(ck_dir)} 的輸入")
             except Exception as e:                          # noqa: BLE001
                 rows.append(("　└ 讀取失敗", sp, False, f"{type(e).__name__}: {e}"))
+    if args.board:
+        add("競賽二 板面 CNN", args.board,
+            "缺了就少 stacker 最強的一個成分（−0.0269）")
     add("競賽一 度量學習", args.feature_metric, "缺了就退回無學習的 PlayerBaseline")
     if os.path.exists(args.feature_metric):
         m = _load_metric(args.feature_metric)
@@ -604,6 +607,14 @@ def main() -> int:
                          "固定權重融合 0.5639 → stacker 0.5727"
                          "（+0.0088，8/8 勝，t=5.00）。C 從 0.3 到 3.0 是平台。"
                          "stacker 在**校準題目**上現場擬合，套用到測試集")
+    ap.add_argument("--board", default="cache/cnn_mps/best.pt",
+                    help="競賽二的板面 CNN（34x19x19 的盤面快照 → 集合池化）。"
+                         "空字串 = 不使用。這是集成裡唯一直接看盤面的成分，"
+                         "與其他成分的輸入完全不重疊：加進來 "
+                         "**+0.0269 ±0.0050（8/8 勝，t=15.32）**，"
+                         "是專案至今最大的單一增益（RESULTS.md 2.27）。"
+                         "代價：推論要即時把每盤棋重播成張量，"
+                         "每 4776 題約 160 秒，比其他成分貴一個數量級")
     ap.add_argument("--rank-seq", nargs="*",
                     default=["cache/rank_seq_opp/models.pt",
                              "cache/rank_seq_opp_full/models.pt",
@@ -724,6 +735,20 @@ def main() -> int:
               flush=True)
     seq_nets = seq_models[0][1] if seq_models else None      # 固定權重路徑用第一個
 
+    # 板面成分。與序列成分不同，它沒有預先算好的特徵庫——推論時要即時
+    # 重播 SGF。所以只在 checkpoint 真的存在時才載入，缺檔就安靜略過
+    # （stacker 會少一個成分，但不會整支掛掉）。
+    board = None
+    if args.board and os.path.exists(args.board):
+        import torch
+        from aicup.board_posterior import load_board_net
+        _bdev = torch.device("cuda" if torch.cuda.is_available() else
+                             "mps" if torch.backends.mps.is_available() else "cpu")
+        _bnet, _bsnap = load_board_net(args.board, _bdev)
+        board = (_bnet, _bsnap, _bdev)
+        print(f"  ＋板面 CNN（{args.board}，{_bsnap} 個 snapshot/局，{_bdev}）",
+              flush=True)
+
     model = None if rank_mlp else _fit_rank_model("cache/rank_model.pkl",
                                                   args.train_per_rank)
 
@@ -766,6 +791,11 @@ def main() -> int:
         _prior = _rank_prior(args.calib_prior, _meta)
         from aicup.question_model import blend_log_posteriors as _blp
         _bcache = {}
+        # 板面成分要從 meta 的列索引回頭讀 SGF；SgfCache 每個檔只載一次。
+        _bcache_sgf = None
+        if board is not None:
+            from aicup.dataset import SgfCache
+            _bcache_sgf = SgfCache()
 
         def _calib_parts(game_rows, tag="q"):
             """對一組題目算出所有 stacker 成分的 log 後驗，外加固定權重路徑的 _lo。
@@ -787,6 +817,13 @@ def main() -> int:
             if rank_question:
                 parts["question"] = _question_log_posteriors(rank_question, _X, _ok,
                                                              game_rows)
+            if board is not None:
+                from aicup.board_posterior import (board_question_posteriors,
+                                                   groups_from_meta)
+                _bn, _bs, _bd = board
+                parts["board"] = np.log(np.clip(board_question_posteriors(
+                    _bn, _bs, groups_from_meta(_meta, game_rows, _bcache_sgf),
+                    _bd), 1e-12, None))
             lo = np.log(np.clip(P, 1e-12, None))
             if seq_models:
                 # 每個變體用**自己的**序列庫。24 維的舊變體與 48 維的棋形變體
@@ -900,6 +937,13 @@ def main() -> int:
             else:
                 Pm = model.question_proba(ft, how=args.aggregation)
                 pr = {"game": np.log(np.clip(Pm, 1e-12, None))}
+            if board is not None:
+                from aicup.board_posterior import (board_question_posteriors,
+                                                   groups_from_flat)
+                _bn, _bs, _bd = board
+                pr["board"] = np.log(np.clip(board_question_posteriors(
+                    _bn, _bs, groups_from_flat(fsgf, fcol, fsizes), _bd),
+                    1e-12, None))
             lo_ = np.log(np.clip(Pm, 1e-12, None))
             if seq_models:
                 bc = {}
