@@ -121,7 +121,9 @@ TRACKS = {
 #   6  競賽二的預設集成加入 seq_shape（三變體 → 四變體）——
 #      基準的組成變了，舊的 production 就不能用了
 #   7  競賽一的預設換成棋形版度量模型（0.9389 → 0.9653，最壞組成）
-GATE_VERSION = 7
+#   8  競賽二的預設集成補上 seq_qual（它早就上線了，但 eval_blend 的預設漏了，
+#      gate 因此一直在跟一個比生產少一個成分的系統比）＋加入板面 CNN
+GATE_VERSION = 8
 BASELINE = 0.4631      # 官方 baseline（競賽二）
 
 
