@@ -48,10 +48,13 @@ from aicup.scoring import (apply_temperature, apply_thresholds,  # noqa: E402
 # 不改原始碼的情況下把評估指向另一個候選模型。
 # ⚠️ 快取的 key 帶有 checkpoint 的**內容指紋**，所以換模型不會拿到舊後驗。
 GAME = os.environ.get("AICUP_GAME", "cache/rank_mlp_opp_big/models.pt")
-# 板面 CNN。空字串 = 不使用（預設）。它是唯一測到誤差與單局模型**負相關**
-# 的成分（−0.14 ~ −0.22），但推論要即時重播 SGF 產生 34×19×19 的張量，
-# 比其他成分貴一個數量級——所以只在明確指定時才算，而且結果會進 OOF 快取。
-BOARD = os.environ.get("AICUP_BOARD", "")
+# 板面 CNN。空字串 = 不使用。**預設就是上線中的那顆**，與 `predict.py --board`
+# 一致——gate 的基準若比生產少一個成分，量出來的增益是相對一個不存在的系統。
+# 它貴：每組題目要即時重播 SGF 產生 34×19×19 的張量，約 160 秒。
+# 但那是**每個題目 seed 一次**，之後全部命中 OOF 快取。
+BOARD = os.environ.get("AICUP_BOARD", "cache/cnn_mps/best.pt")
+if BOARD and not os.path.exists(BOARD):
+    BOARD = ""
 QUESTION = os.environ.get("AICUP_QUESTION", "cache/rank_question_opp/models.pt")
 # ⚠️ 預設**就是上線中的三變體集成**，不是單一模型。
 # 實測 seq_full（+0.0053）與 seq_w192（+0.0061）各自都沒過 0.005 門檻，
@@ -60,7 +63,11 @@ QUESTION = os.environ.get("AICUP_QUESTION", "cache/rank_question_opp/models.pt")
 SEQ = [p for p in os.environ.get(
     "AICUP_SEQ",
     "cache/rank_seq_opp/models.pt,cache/rank_seq_opp_full/models.pt,"
-    "cache/rank_seq_w192/models.pt,cache/rank_seq_shape/models.pt").split(",") if p]
+    "cache/rank_seq_w192/models.pt,cache/rank_seq_shape/models.pt,"
+    "cache/rank_seq_qual/models.pt").split(",") if p]
+# ⚠️ 這份清單必須與 `predict.py --rank-seq` 的預設一致。
+# 2026-09-22 發現 qual 變體上線了卻沒加進這裡，gate 的基準因此
+# 比生產環境少一個成分——量出來的「增益」是相對一個不存在的系統。
 # 候選模型用 **AICUP_SEQ_EXTRA 附加**，不要用 AICUP_SEQ 取代。
 # 取代的話等於拿單一模型去比三變體集成的分數——那是不公平的比較，
 # 而且會把「它加進去有沒有幫助」這個真正要問的問題換成另一個問題。
@@ -147,51 +154,24 @@ class Components:
     def board(self, q, ckpt=None):
         """板面 CNN 的題目層級後驗。
 
-        用 `forward_set`——模型本來就是用集合池化在**題目層級**訓練的，
-        比逐局後驗再幾何平均更貼近它學到的東西。
-
-        ⚠️ 一定要用 `load_gonet`（strict=True），不要用 `strict=False`。
-        `pool` / `global_pool_bias` 曾經漏存，strict=False 會**靜默地**
-        載入一個隨機初始化的 pooling head，讓整個評估失去意義
-        （RESULTS.md 四章的靜默 bug 之一）。
+        實作在 `aicup.board_posterior`——**校準端、推論端、這裡三條路徑
+        必須共用同一份**。先前三處各抄一份，「每個 snapshot 各自是集合成員」
+        的修正只改到兩處，這條路徑用平均、Spearman 從 0.9207 掉到 0.7232
+        （RESULTS.md §2.27）。
         """
         ckpt = ckpt or BOARD
         key = f"board::{ckpt}"
         if key not in self._loaded:
+            from aicup.board_posterior import load_board_net
             from aicup.dataset import SgfCache
-            from aicup.nets import load_gonet
-            from aicup.planes import game_planes, planes_to_float
-            ck = torch.load(ckpt, map_location=self.dev, weights_only=False)
-            net = load_gonet(ck["model"], ck.get("config"))
-            net.eval().to(self.dev)
-            nsnap = int(ck["args"].get("snapshots", 4))
-            self._loaded[key] = (net, SgfCache(), game_planes, nsnap,
-                                 planes_to_float)
-        net, cache, game_planes, nsnap, planes_to_float = self._loaded[key]
+            self._loaded[key] = load_board_net(ckpt, self.dev) + (SgfCache(),)
+        net, nsnap, cache = self._loaded[key]
         if self._meta is None:
             self._meta = load_metadata()
-        meta = self._meta
-
-        out = []
-        with torch.no_grad():
-            for rows in q.game_rows:
-                planes = []
-                for r in rows:
-                    rec = meta.iloc[int(r)]
-                    t = game_planes(cache.get(int(rec["file_idx"]), int(rec["row"])),
-                                    rec["color"], n_snapshots=nsnap)
-                    if t is not None:
-                        planes.append(planes_to_float(t).mean(axis=0))
-                if not planes:
-                    out.append(np.full(10, 0.1)); continue
-                x = torch.from_numpy(np.stack(planes)).float().to(self.dev)[None]
-                o = net.forward_set(x)
-                pc = corn_to_proba(o["corn_logits"]).cpu().numpy()
-                pc = pc / np.maximum(pc.sum(axis=1, keepdims=True), 1e-12)
-                p = (0.5 * torch.softmax(o["rank_logits"], -1).cpu().numpy()
-                     + 0.5 * pc)[0]
-                out.append(p / p.sum())
-        return _log(np.stack(out))
+        from aicup.board_posterior import (board_question_posteriors,
+                                           groups_from_meta)
+        groups = groups_from_meta(self._meta, q.game_rows, cache)
+        return _log(board_question_posteriors(net, nsnap, groups, self.dev))
 
     def seq(self, q, ckpt=None, stores=None):
         """一個序列 checkpoint 的題目層級 log 後驗。
@@ -296,7 +276,10 @@ def main() -> int:
         comps = [("game", comp.game, [GAME]),
                  ("question", comp.question, [QUESTION])]
         if BOARD:
-            comps.append(("board", comp.board, [BOARD]))
+            # 標籤帶 `set`：集合成員的定義從「snapshot 先平均」改成
+            # 「每個 snapshot 各自成員」後，後驗語意變了（Spearman
+            # 0.7232 → 0.9207）。換標籤讓舊快取永遠不會被誤用。
+            comps.append(("boardset", comp.board, [BOARD]))
         for _ck, _st in zip(SEQ, SEQS):
             _tag = f"seq_{os.path.basename(os.path.dirname(_ck))}"
             comps.append((_tag,
