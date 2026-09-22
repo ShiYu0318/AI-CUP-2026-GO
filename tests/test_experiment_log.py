@@ -62,3 +62,59 @@ def test_missing_file_returns_empty_frame(tmp_path):
     df = load_experiments(str(tmp_path / "nope.csv"))
     assert df.empty
     assert list(df.columns) == FIELDS
+
+
+def test_minutes_is_recorded(tmp_path):
+    p = tmp_path / "e.csv"
+    log_experiment("rank", "a", {"x": 1}, {"s": 0.5}, path=str(p), minutes=12.5)
+    df = load_experiments(str(p))
+    assert float(df.iloc[0]["minutes"]) == 12.5
+
+
+def test_minutes_may_be_omitted(tmp_path):
+    p = tmp_path / "e.csv"
+    log_experiment("rank", "a", {"x": 1}, {"s": 0.5}, path=str(p))
+    df = load_experiments(str(p))
+    assert df.iloc[0]["minutes"] != df.iloc[0]["minutes"]      # NaN
+
+
+def test_old_header_is_migrated_not_misaligned(tmp_path):
+    """加欄位之後，舊檔案的表頭必須先遷移。
+
+    不遷移的話 DictWriter 會照**新的** FIELDS 寫，而表頭是**舊的**——
+    每一列都欄位錯位，而且 CSV 不會報錯。這是這次改動最危險的地方。
+    """
+    import csv
+    p = tmp_path / "e.csv"
+    old = ["timestamp", "task", "name", "commit", "dirty", "host",
+           "config", "metrics", "note"]
+    with open(p, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=old)
+        w.writeheader()
+        w.writerow({k: "old" for k in old} | {"config": "{}", "metrics": '{"s": 0.1}'})
+    log_experiment("rank", "new", {}, {"s": 0.9}, path=str(p), minutes=3.0)
+    df = load_experiments(str(p))
+    assert list(df["name"]) == ["old", "new"]
+    assert df.iloc[0]["task"] == "old", "舊列的欄位不能錯位"
+    assert float(df.iloc[1]["minutes"]) == 3.0
+    assert float(df.iloc[0]["m.s"]) == 0.1 and float(df.iloc[1]["m.s"]) == 0.9
+
+
+def test_timer_measures_and_survives_exceptions():
+    from aicup.experiment_log import timer
+    import pytest as _pt
+    with timer() as t:
+        pass
+    assert t.minutes >= 0
+    with _pt.raises(ValueError):
+        with timer() as t2:
+            raise ValueError
+    assert t2.minutes >= 0, "失敗的實驗也要有時間可查"
+
+
+def test_cost_report_adds_gain_per_hour(tmp_path):
+    from aicup.experiment_log import cost_report
+    p = tmp_path / "e.csv"
+    log_experiment("rank", "a", {}, {"gain": 0.01}, path=str(p), minutes=60.0)
+    r = cost_report(str(p))
+    assert abs(float(r.iloc[0]["增益/小時"]) - 0.01) < 1e-9

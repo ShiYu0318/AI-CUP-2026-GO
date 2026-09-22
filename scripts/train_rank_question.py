@@ -69,6 +69,7 @@ def main() -> int:
                     help="額外的特徵庫，沿特徵軸串接。`cache/features_opp.npy` 是**對手視角**的特徵（同盤棋、執色反轉）：伺服器把你配對給實力相近的人，所以對手的表現反映配對分級、而分級反映你的穩定實力。實測 6 組獨立題目 +0.0491±0.0232（6/6 勝，t=5.19）")
     ap.add_argument("--out", default="cache/rank_question")
     args = ap.parse_args()
+    _t0 = time.time()      # 記錄總耗時，寫進 cache/experiments.csv
 
     device = pick_device(args.device)
     os.makedirs(args.out, exist_ok=True)

@@ -245,6 +245,7 @@ def main() -> int:
     ap.add_argument("--device", default="auto")
     ap.add_argument("--out", default="cache/rank_seq")
     args = ap.parse_args()
+    _t0 = time.time()      # 記錄總耗時，寫進 cache/experiments.csv
 
     if args.threads > 0:
         torch.set_num_threads(args.threads)
@@ -338,6 +339,12 @@ def main() -> int:
         json.dump({"scores": scores, "mean": float(a.mean()),
                    "std": float(a.std(ddof=1))}, f, indent=2)
     print(f"已寫出 {args.out}/models.pt", flush=True)
+
+    from aicup.experiment_log import log_experiment
+    log_experiment("rank", os.path.basename(args.out), vars(args),
+                   {"internal_question_score": float(a.mean()),
+                    "std": float(a.std(ddof=1))},
+                   minutes=(time.time() - _t0) / 60)
     return 0
 
 

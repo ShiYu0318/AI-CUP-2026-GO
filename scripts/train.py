@@ -357,6 +357,16 @@ def main() -> int:
     with open(os.path.join(args.out, "history.json"), "w") as f:
         json.dump(history, f, indent=2)
     print(f"\n完成。最佳 Spearman（期望等級 vs 真實等級）{best:.4f}")
+
+    from aicup.experiment_log import log_experiment
+    log_experiment("rank", os.path.basename(args.out), vars(args),
+                   {"best_spearman": float(best),
+                    "steps_done": int(history[-1]["step"]) if history else 0,
+                    "last_score_expected": (float(history[-1]["score_expected"])
+                                            if history else None)},
+                   note="板面 CNN。**用 Spearman 選 checkpoint**，"
+                        "解碼後的分數會被輸出尺度崩壞掩蓋（RESULTS.md 四章）",
+                   minutes=(time.time() - t0) / 60)
     return 0
 
 

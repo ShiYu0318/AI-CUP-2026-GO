@@ -416,9 +416,15 @@ def spawn(cmd, log_path, env_extra=None):
                             stderr=subprocess.STDOUT), fh
 
 
-def record(exp: dict, score: float, prod: float, verdict: str, detail: str) -> None:
-    """把結果寫進 RESULTS.md 的無效方法表或主線表——**成功失敗都要記**。"""
-    line = (f"| {datetime.now():%m-%d} | **{exp['name']}** | {score:.4f} | "
+def record(exp: dict, score: float, prod: float, verdict: str, detail: str,
+           train_mins: float = 0.0, gate_mins: float = 0.0) -> None:
+    """把結果寫進 RESULTS.md 的無效方法表或主線表——**成功失敗都要記**。
+
+    時間也要記：「這個增益值不值得」是要把成本算進去才答得出來的問題，
+    而事後從散落的 log 裡撈時間非常痛苦。
+    """
+    cost = f"訓練 {train_mins:.0f} 分＋gate {gate_mins:.0f} 分"
+    line = (f"| {datetime.now():%m-%d} | **{exp['name']}** | {score:.4f} | {cost} | "
             f"相對現況 {score - prod:+.4f}（門檻 {FLOOR:+.3f}）→ **{verdict}**。"
             f"{exp['why']}。{detail} |\n")
     path = os.path.join(ROOT, LEDGER)
@@ -429,12 +435,15 @@ def record(exp: dict, score: float, prod: float, verdict: str, detail: str) -> N
         with open(path, "a", encoding="utf-8") as f:
             f.write("\n" + line)
         return
-    block = "\n### 自動迴圈的實驗紀錄\n\n| 日期 | 實驗 | 分數 | 結論 |\n|---|---|---:|---|\n"
+    block = ("\n### 自動迴圈的實驗紀錄\n\n"
+             "| 日期 | 實驗 | 分數 | 耗時 | 結論 |\n|---|---|---:|---|---|\n")
     if "### 自動迴圈的實驗紀錄" not in s:
         s = s.replace(anchor, block + line + "\n---\n\n" + anchor)
     else:
         i = s.index("### 自動迴圈的實驗紀錄")
-        j = s.index("\n\n", s.index("|---|---|---:|---|", i))
+        hdr = "|---|---|---:|---|---|" if "|---|---|---:|---|---|" in s[i:i + 400] \
+            else "|---|---|---:|---|"
+        j = s.index("\n\n", s.index(hdr, i))
         s = s[:j + 1] + line + s[j + 1:]
     with open(path, "w", encoding="utf-8") as f:
         f.write(s)
@@ -540,22 +549,28 @@ def main() -> int:
             mins = (time.time() - t0) / 60
             if proc.returncode != 0:
                 log(f"[{exp['name']}] 訓練失敗（{mins:.1f} 分），見 {lp}")
-                st["done"][exp["name"]] = {"status": "train_failed"}
+                # 失敗也要記時間——「這個方向試了多久才放棄」同樣是成本
+                st["done"][exp["name"]] = {"status": "train_failed",
+                                           "train_minutes": round(mins, 1)}
                 save_state(st)
             else:
                 log(f"[{exp['name']}] 訓練完成（{mins:.1f} 分）→ 排入 gate")
-                to_gate.append(exp)
+                to_gate.append((exp, mins))
 
         # 3) Gate 一律**序列**執行。
         #    它要跑 8 組題目的推論，同樣吃 MPS；與訓練搶資源會讓兩邊都變慢，
         #    而且 gate 很快（有快取時幾秒），沒有平行的必要。
         if to_gate and (not running or len(running) < args.jobs or not pending):
-            exp = to_gate.pop(0)
+            exp, train_mins = to_gate.pop(0)
             log(f"[{exp['name']}] 用 8 組 player-disjoint 協定 gate…")
+            _g0 = time.time()
             rc, out = run(exp["eval"], env_extra=exp.get("eval_env"))
+            gate_mins = (time.time() - _g0) / 60
             if rc != 0:
                 log(f"[{exp['name']}] 評估失敗：\n{out[-1200:]}")
-                st["done"][exp["name"]] = {"status": "eval_failed"}
+                st["done"][exp["name"]] = {"status": "eval_failed",
+                                           "train_minutes": round(train_mins, 1),
+                                           "gate_minutes": round(gate_mins, 1)}
                 save_state(st); continue
             with open(os.path.join(ROOT, exp["json"])) as f:
                 res = json.load(f)
@@ -569,8 +584,21 @@ def main() -> int:
             detail = (f"建議把 `predict.py` 的 `--rank-seq` 預設改成 "
                       f"`{exp.get('eval_env', {}).get('AICUP_SEQ', '?')}`"
                       if won else "維持現況")
-            record(exp, score, prod, verdict, detail)
-            st["done"][exp["name"]] = {"score": score, "gain": gain, "won": won}
+            record(exp, score, prod, verdict, detail, train_mins, gate_mins)
+            st["done"][exp["name"]] = {"score": score, "gain": gain, "won": won,
+                                       "train_minutes": round(train_mins, 1),
+                                       "gate_minutes": round(gate_mins, 1)}
+            try:
+                from aicup.experiment_log import log_experiment
+                log_experiment(tr, exp["name"],
+                               {"train": exp.get("train"),
+                                "eval_env": exp.get("eval_env")},
+                               {"score": score, "production": prod, "gain": gain,
+                                "won": won, "gate_minutes": round(gate_mins, 2)},
+                               note=exp["why"][:200],
+                               minutes=train_mins + gate_mins)
+            except Exception as e:                       # noqa: BLE001
+                log(f"[{exp['name']}] 寫 experiments.csv 失敗（不影響結果）：{e}")
             if won:
                 st["production"][tr] = score
             save_state(st)

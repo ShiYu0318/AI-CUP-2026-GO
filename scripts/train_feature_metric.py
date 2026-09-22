@@ -127,6 +127,7 @@ def main() -> int:
                     help="額外的特徵庫。`cache/features_opp.npy` 是對手視角——"
                          "對競賽二有 +0.033，對競賽一是否有用尚待驗證")
     args = ap.parse_args()
+    _t0 = time.time()      # 記錄總耗時，寫進 cache/experiments.csv
 
     device = pick_device(args.device)
     os.makedirs(args.out, exist_ok=True)
