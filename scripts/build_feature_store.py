@@ -24,13 +24,10 @@ from __future__ import annotations
 import argparse
 import multiprocessing as mp
 import os
-import sys
 import time
 
 import numpy as np
 import pandas as pd
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from aicup.data import training_files          # noqa: E402
 from aicup.features import (N_FEATURES, batch_features,          # noqa: E402

@@ -46,7 +46,6 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from aicup.benchmark import build_rank_questions                 # noqa: E402

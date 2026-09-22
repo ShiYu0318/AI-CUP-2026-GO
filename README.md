@@ -40,6 +40,9 @@
 ## 快速開始
 
 ```bash
+# 0. 安裝（editable，之後 `import aicup` 從任何目錄都能用）
+pip install -e ".[torch,dev]"
+
 # 1. 下載官方訓練集（214 MB，解壓後約 1.3 GB，走官方 Releases）
 #    https://github.com/AILAB-NDHU/aicup2026-go-dataset/releases
 tar xf aicup2026_go_training.tar.xz        # 解出 training/
@@ -105,7 +108,8 @@ scripts/                          # 31 支，以下是主要的
 **分層**：`src/aicup/` 是可匯入的函式庫，定義「什麼是正確的」——評分公式、
 棋盤規則、切分協定、模型結構；沒有 CLI，被 22 個測試模組直接匯入。
 `scripts/` 是可執行的流程，每支做一件事，31 支裡 28 支有 `__main__`。
-**依賴是單向的**：`src/` 從不 import `scripts/`，而
+套件以 editable 模式安裝（`pip install -e .`），所以腳本直接 `import aicup`，
+不需要 `sys.path` 修補。**依賴是單向的**：`src/` 從不 import `scripts/`，而
 `tests/test_layering.py` 會擋住這條界線再度漂移（它曾經漂移過一次：
 模型定義住在訓練腳本裡，害得產生提交檔的 `predict.py` 依賴訓練腳本）。
 
@@ -158,11 +162,22 @@ Top-5 必須相異、且 `pub_` 題目只能填 `pub_p_` 開頭的玩家（跨�
 
 `aicup.submission` 把這些規則寫成會丟例外的驗證函數，驗證不過就不寫檔。
 
-## 沒有本機 GPU
+## 換一台機器（例如租/借 GPU）
+
+```bash
+git clone <repo> && cd AI-CUP-2026-GO
+pip install -e ".[torch,dev]"
+python3 -m pytest -q                    # 先確認環境正常
+```
+
+之後照「快速開始」建特徵庫即可。裝置選擇是自動的
+（`cuda` → `mps` → `cpu`），同一份程式不用改。
 
 `train.py --resume` 可從斷線處接回（還原模型 / ArcFace head / optimizer / scheduler）。
-⚠️ `--workers` 請留 0：每個 DataLoader worker 會各自載入全部 10 份 CSV，
-多開幾個就把機器吃光，而且是**安靜地**停住，不會報錯。
+
+⚠️ **`--workers` 請留 0。** 每個 DataLoader worker 會各自載入全部 10 份 CSV
+（約 3 GB），多開幾個就把機器吃光——而且是**安靜地**停住：程序還活著、
+沒有錯誤、日誌毫無異常，只是一步都不動。
 
 ## 授權與致謝
 

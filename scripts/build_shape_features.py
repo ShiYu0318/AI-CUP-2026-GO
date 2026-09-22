@@ -27,13 +27,9 @@
 from __future__ import annotations
 
 import argparse
-import os
-import sys
 import time
 
 import numpy as np
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from aicup.moveshape import (N_SHAPE_FEATURES,      # noqa: E402
                              N_SHAPE_STATS as N_STATS, aggregate_shape)

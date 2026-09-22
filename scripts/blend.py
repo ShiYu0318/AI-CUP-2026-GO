@@ -24,13 +24,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 
 import numpy as np
 import torch
 import torch.nn.functional as F
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from aicup.data import load_metadata, make_player_split          # noqa: E402
 from aicup.benchmark import build_player_pool, build_rank_questions  # noqa: E402

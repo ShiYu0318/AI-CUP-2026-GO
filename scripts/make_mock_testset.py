@@ -17,12 +17,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 
 import numpy as np
 import pandas as pd
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from aicup import ID_TO_RANK                                  # noqa: E402
 from aicup.data import load_metadata, make_player_split, load_sgf   # noqa: E402

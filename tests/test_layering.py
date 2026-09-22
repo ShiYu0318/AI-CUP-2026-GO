@@ -12,6 +12,7 @@ import 或副作用，提交路徑就跟著受影響。定義已移到 `aicup.ra
 """
 import ast
 import pathlib
+import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "src" / "aicup"
@@ -68,3 +69,40 @@ def test_library_modules_have_no_cli():
     offenders = [f.name for f in sorted(SRC.glob("*.py"))
                  if "argparse" in _imported_names(f) and f.stem != "experiment_log"]
     assert not offenders, f"這些函式庫模組帶了 CLI：{offenders}"
+
+
+def test_scripts_do_not_patch_sys_path_for_the_library():
+    """套件以 editable 安裝（`pip install -e .`），腳本直接 `import aicup`。
+
+    2026-09-22 之前有 28 支腳本各自寫了
+    `sys.path.insert(0, .../src)` 來繞過未安裝的問題。那會讓
+    「程式能不能跑」取決於檔案的相對位置，而不是環境設定；
+    搬動檔案或從別的地方匯入時就會壞。
+
+    （匯入**同儕腳本**的 `sys.path.insert(scripts_dir)` 不在此限——
+    那是腳本之間的事，與函式庫無關。）
+    """
+    needle, pkg_dir = "sys.path", '"' + "src" + '"'      # 拆開寫，才不會抓到自己
+    offenders = []
+    for f in sorted(SCRIPTS.glob("*.py")) + sorted((ROOT / "tests").glob("*.py")):
+        if f.name == pathlib.Path(__file__).name:
+            continue
+        for line in f.read_text(encoding="utf-8").split("\n"):
+            if needle in line and pkg_dir in line:
+                offenders.append(f"{f.name}: {line.strip()}")
+    assert not offenders, (
+        "這些檔案還在手動把 src 加進 sys.path；改用 `pip install -e .`：\n"
+        + "\n".join(offenders))
+
+
+def test_library_is_importable_as_an_installed_package():
+    """裝好之後，從任何工作目錄都該能 `import aicup`。"""
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        r = subprocess.run([sys.executable, "-c",
+                            "import aicup.scoring; print(aicup.scoring.E_INV)"],
+                           cwd=d, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, (
+        "從別的目錄 import aicup 失敗——套件沒裝？跑 `pip install -e .`\n"
+        + (r.stderr or "")[-400:])

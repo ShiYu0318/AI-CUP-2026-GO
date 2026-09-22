@@ -5,14 +5,7 @@
 .DS_Store
 __pycache__/
 *.pyc
-
 /cache/
 /mock_tests/
-# artifacts/ 整個不進 repo。
-# 裡面的自駕迴圈日誌逐字記錄了每個實驗的分數、增益、結論**與理由**，
-# 等於是 RESULTS.md 的另一份副本——只把 RESULTS.md 移到 docs/ 而留著這些，
-# 等於沒移。
 /artifacts/
-
-# notebooks/ 也不進 repo（Kaggle/Colab 訓練用的 notebook）
 /notebooks/

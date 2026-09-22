@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 import time
 
 import numpy as np
@@ -27,8 +26,6 @@ import torch
 import torch.nn.functional as F
 from scipy.stats import spearmanr
 from torch.utils.data import DataLoader
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from aicup import N_LEVELS                                         # noqa: E402
 from aicup.data import load_metadata, make_player_split            # noqa: E402

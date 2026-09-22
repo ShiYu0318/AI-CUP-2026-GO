@@ -33,7 +33,6 @@ from types import SimpleNamespace
 import numpy as np
 import torch
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from aicup.benchmark import build_player_pool                    # noqa: E402

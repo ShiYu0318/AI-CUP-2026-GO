@@ -15,8 +15,6 @@ import pytest
 torch = pytest.importorskip("torch")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
 from train_rank_mlp import RankMLP, question_posteriors   # noqa: E402
 
 

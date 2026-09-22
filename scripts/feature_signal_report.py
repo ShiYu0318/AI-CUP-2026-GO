@@ -14,13 +14,9 @@
 from __future__ import annotations
 
 import argparse
-import os
-import sys
 
 import numpy as np
 import pandas as pd
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from aicup import LEVELS                                   # noqa: E402
 from aicup.data import load_metadata, make_player_split    # noqa: E402

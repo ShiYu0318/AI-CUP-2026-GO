@@ -23,8 +23,6 @@ import time
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
 from aicup import RANK_TO_ID, ID_TO_RANK                       # noqa: E402
 from aicup.data import load_metadata, make_player_split        # noqa: E402
 from aicup.features import batch_features, parallel_batch_features  # noqa: E402

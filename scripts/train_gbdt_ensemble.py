@@ -19,12 +19,9 @@ import argparse
 import json
 import os
 import pickle
-import sys
 import time
 
 import numpy as np
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from aicup.data import load_metadata, make_player_split          # noqa: E402
 from aicup.benchmark import build_rank_questions                 # noqa: E402

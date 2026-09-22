@@ -21,13 +21,9 @@
 from __future__ import annotations
 
 import argparse
-import os
-import sys
 import time
 
 import numpy as np
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from aicup.moveshape import N_RELATION           # noqa: E402
 
