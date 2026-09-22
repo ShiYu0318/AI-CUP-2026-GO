@@ -33,7 +33,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from .goboard import SIZE, EMPTY, BLACK, WHITE, Board, parse_moves
+from .goboard import (SIZE, EMPTY, BLACK, WHITE, Board, parse_moves,
+                      normalise_color)
 
 N_HISTORY = 8
 LIBERTY_BUCKETS = 4
@@ -85,7 +86,12 @@ def game_planes(sgf: str, color: str | int, *, n_snapshots: int = 8,
 
     回傳 None 表示棋局太短或無法解析。
     """
-    my = BLACK if (color == "B" or color == BLACK) else WHITE
+    # ⚠️ 嚴格解析，不要退回 `BLACK if color == "B" else WHITE`。
+    # 那個寫法會把 "b"、"black"、" B" 全部當成白棋——所有黑棋局用錯視角，
+    # 不拋例外、形狀不變，只是分數安靜變差。`features.py` 早就修了，
+    # 但這裡漏掉；在板面 CNN 進入推論路徑之前沒差（訓練讀的是已正規化的
+    # metadata），現在它要直接讀官方測試檔的執色欄位。
+    my = normalise_color(color)
     opp = WHITE if my == BLACK else BLACK
 
     moves = parse_moves(sgf)

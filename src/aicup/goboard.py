@@ -152,3 +152,29 @@ def iter_boards(moves) -> Iterator[Tuple[int, Board]]:
     for i, (color, r, c) in enumerate(moves):
         b.play(color, r, c)
         yield i, b
+
+
+_BLACK_TOKENS = {"b", "black", "1", str(BLACK)}
+_WHITE_TOKENS = {"w", "white", "2", str(WHITE)}
+
+
+def normalise_color(color: str | int) -> int:
+    """把題目檔的「執色」欄位轉成內部的 BLACK / WHITE。
+
+    ⚠️ 這裡刻意對無法辨識的值**丟例外**，而不是預設成白棋。
+    早期版本是 `BLACK if color == "B" else WHITE`，於是 `"b"`、`"black"`、
+    `" B"`（多一個空白）全都會被當成白棋——**所有黑棋局都會用錯誤的視角
+    抽特徵**，而且不拋例外、不改變形狀，只是分數安靜地變差。
+    測試集是比賽當天才釋出的，欄位寫法只要與訓練資料差一點就會中招，
+    所以寧可當場炸掉也不要靜默算錯。
+    """
+    if isinstance(color, (int, np.integer)):
+        if int(color) in (BLACK, WHITE):
+            return int(color)
+        raise ValueError(f"無法辨識的執色：{color!r}（預期 {BLACK}=黑 / {WHITE}=白）")
+    tok = str(color).strip().lower()
+    if tok in _BLACK_TOKENS:
+        return BLACK
+    if tok in _WHITE_TOKENS:
+        return WHITE
+    raise ValueError(f"無法辨識的執色：{color!r}（預期 B/W）")

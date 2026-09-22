@@ -51,3 +51,20 @@ def test_black_and_white_features_actually_differ():
     """反證：視角真的會改變特徵，所以上面的測試不是空轉。"""
     sgf = _sgf()
     assert not np.array_equal(game_features(sgf, "B"), game_features(sgf, "W"))
+
+
+def test_game_planes_is_strict_too():
+    """板面張量走的是另一條路徑，一樣不能用 `== "B"` 的寬鬆判斷。
+
+    2026-09-22 之前 `planes.py` 還是舊寫法。在板面 CNN 進入 `predict.py`
+    的推論路徑之前這沒差（訓練讀的是已正規化的 metadata），
+    但現在它直接讀官方測試檔的執色欄位。
+    """
+    from aicup.planes import game_planes
+    sgf = _sgf()
+    a = game_planes(sgf, "B")
+    b = game_planes(sgf, "b")
+    assert a is not None and np.array_equal(a, b)
+    assert not np.array_equal(a, game_planes(sgf, "W"))
+    with pytest.raises(ValueError):
+        game_planes(sgf, "藍")
