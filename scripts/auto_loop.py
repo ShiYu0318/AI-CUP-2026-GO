@@ -83,7 +83,9 @@ from datetime import datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE = "artifacts/auto_loop_state.json"
-LEDGER = "RESULTS.md"
+# 實驗紀錄放在 `docs/`（gitignore），**不會進 GitHub**——
+# 它記的是什麼有效、什麼無效，那是競賽策略。
+LEDGER = "docs/RESULTS.md"
 FLOOR = 0.005          # 小於這個增益不算贏（seed 間標準差約 ±0.010）
 
 # 兩個子題各有自己的生產基準與 baseline。
@@ -450,8 +452,13 @@ def record(exp: dict, score: float, prod: float, verdict: str, detail: str,
 
 
 def git_commit(msg: str) -> None:
-    run(["git", "add", "-A", "RESULTS.md", "artifacts/auto_loop_state.json"])
-    run(["git", "commit", "-q", "-m", msg])
+    """（已停用）迴圈不再自動 commit。
+
+    2026-09-22 起 `docs/`（實驗帳本）與 `artifacts/`（迴圈日誌、分數 JSON）
+    都在 `.gitignore` 裡——它們記的是什麼有效、什麼無效，屬於競賽策略，
+    不進公開 repo。既然兩者都不再被追蹤，自動 commit 就沒有東西可 commit 了。
+    程式碼的改動由人自己 commit。
+    """
 
 
 def main() -> int:

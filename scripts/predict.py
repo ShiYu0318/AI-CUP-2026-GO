@@ -524,7 +524,7 @@ def check_artifacts(args) -> int:
     if miss:
         print(f"**缺少 {len(miss)} 項。** `predict.py` 不會報錯——"
               f"它會安靜地少用那些成分，交出一份分數較低的檔案。")
-        print("產生方式見 RUNBOOK.md 的「事前必須就緒的東西」。")
+        print("產生方式見 docs/RUNBOOK.md 的「事前必須就緒的東西」（本機文件）。")
         return 1
     print(f"全部 {len(uniq)} 項就緒，可以跑 `python3 scripts/predict.py`。")
     return 0
