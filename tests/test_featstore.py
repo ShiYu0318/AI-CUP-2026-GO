@@ -59,3 +59,19 @@ def test_ok_mask_is_intersected(tmp_path):
         np.save(tmp_path / f"{name}_ok.npy", np.array(ok))
     _, ok = open_stores([str(tmp_path / "a.npy"), str(tmp_path / "b.npy")])
     assert ok.tolist() == [True, False, False]
+
+
+def test_take_columns_matches_naive_gather():
+    """分塊版必須與 `np.asarray(X[rows])[:, cols]` 逐元素相同，含跨份欄位與非遞增順序。"""
+    import numpy as np
+    from aicup.featstore import MultiStore, take_columns
+    rng = np.random.default_rng(0)
+    a = rng.normal(size=(1000, 7)).astype(np.float32)
+    b = rng.normal(size=(1000, 5)).astype(np.float32)
+    X = MultiStore([a, b])
+    rows = np.sort(rng.choice(1000, 300, replace=False))
+    cols = np.array([11, 0, 3, 7, 8, 2])
+    want = np.asarray(X[rows])[:, cols]
+    assert np.array_equal(take_columns(X, rows, cols, chunk=64), want)
+    assert np.array_equal(X.take(rows, cols, chunk=7), want)
+    assert np.array_equal(take_columns(a, rows, [6, 1], chunk=50), a[rows][:, [6, 1]])

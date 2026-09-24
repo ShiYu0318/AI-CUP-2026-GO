@@ -22,7 +22,7 @@ import torch
 import torch.nn.functional as F
 
 from aicup.data import load_metadata, make_player_split        # noqa: E402
-from aicup.featstore import open_stores          # noqa: E402
+from aicup.featstore import open_stores, take_columns          # noqa: E402
 from aicup.benchmark import build_player_pool                  # noqa: E402
 from aicup.baselines import PlayerBaseline                     # noqa: E402
 from aicup.feature_metric import (FeatureEmbedder, FeatureScaler,   # noqa: E402
@@ -163,9 +163,10 @@ def main() -> int:
     else:
         cols = ident
     print(f"特徵欄位 {len(cols)} / {X.shape[1]}", flush=True)
-    Xraw = np.asarray(X[tr])[:, cols]
+    Xraw = take_columns(X, tr, cols)      # 分塊讀，不經過 4 GB 的全寬中間陣列
     scaler = FeatureScaler().fit(Xraw)
-    Xtr = scaler.transform(Xraw)
+    Xtr = scaler.transform(Xraw, inplace=True)   # 原地標準化，不再多一份 3.6 GB
+    del Xraw
     sampler = PKFeatureSampler(labels, p=args.p, k=args.k, seed=0)
     print(f"可用身分 {sampler.n_classes:,}（局數 ≥2）", flush=True)
 

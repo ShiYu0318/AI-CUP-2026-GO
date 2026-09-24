@@ -49,14 +49,36 @@ class FeatureScaler:
         self.sd = None
         self.eps = eps
 
+    # ⚠️ fit / transform 都**分塊**做。舊版把整份轉成 float64 再運算：
+    # 78 萬局 x 1164 維時 fit 峰值約 14 GB、transform 約 18 GB，
+    # 在 24 GB 的機器上一跑就換頁（2026-09-24 度量模型訓練 20 分鐘沒前進）。
+    # 逐元素運算分塊與整份結果逐位元相同；fit 的加總順序不同，差在捨入誤差。
+    CHUNK = 50_000
+
     def fit(self, X: np.ndarray) -> "FeatureScaler":
-        X = np.asarray(X, dtype=np.float64)
-        self.mu = X.mean(axis=0)
-        self.sd = X.std(axis=0) + self.eps
+        n = len(X)
+        s = np.zeros(X.shape[1], dtype=np.float64)
+        for a in range(0, n, self.CHUNK):
+            s += np.asarray(X[a:a + self.CHUNK], dtype=np.float64).sum(axis=0)
+        self.mu = s / n
+        ss = np.zeros_like(s)
+        for a in range(0, n, self.CHUNK):
+            d = np.asarray(X[a:a + self.CHUNK], dtype=np.float64) - self.mu
+            ss += (d * d).sum(axis=0)
+        self.sd = np.sqrt(ss / n) + self.eps
         return self
 
-    def transform(self, X: np.ndarray) -> np.ndarray:
-        return ((np.asarray(X, dtype=np.float64) - self.mu) / self.sd).astype(np.float32)
+    def transform(self, X: np.ndarray, inplace: bool = False) -> np.ndarray:
+        """`inplace=True` 時直接覆寫 X（必須是 float32 陣列），省下一整份的記憶體。"""
+        X = np.asarray(X)
+        if inplace and X.dtype != np.float32:
+            raise ValueError("inplace 只支援 float32 陣列")
+        out = X if inplace else np.empty(X.shape, dtype=np.float32)
+        for a in range(0, len(X), self.CHUNK):
+            b = a + self.CHUNK
+            out[a:b] = ((np.asarray(X[a:b], dtype=np.float64) - self.mu)
+                        / self.sd).astype(np.float32)
+        return out
 
     def state_dict(self) -> dict:
         return {"mu": self.mu, "sd": self.sd, "eps": self.eps}

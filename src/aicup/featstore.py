@@ -46,6 +46,16 @@ class MultiStore:
             return self.parts[0][rows]
         return np.concatenate([np.asarray(p[rows]) for p in self.parts], axis=-1)
 
+    def take(self, rows, cols, chunk: int = 50_000) -> np.ndarray:
+        """等同 `np.asarray(X[rows])[:, cols]`，但**不經過全寬的中間陣列**。
+
+        舊寫法會先把所有欄位讀出來（78 萬局 x 1274 維 = 4.0 GB），
+        再挑欄位複製一次（3.6 GB），峰值約 7.6 GB。2026-09-24 在記憶體
+        只剩約 7 GB 時，度量模型訓練因此在 mmap 上換頁爬行，20 分鐘沒前進。
+        這裡預先配置輸出、分塊讀取、每塊只留需要的欄位，峰值 ≈ 輸出本身。
+        """
+        return take_columns(self, rows, cols, chunk)
+
     def __array__(self, dtype=None):
         raise TypeError(
             "MultiStore 不支援整份轉成陣列（會把數 GB 讀進記憶體）。"
@@ -68,3 +78,24 @@ def open_stores(paths, mask_paths=None):
         m = np.load(mp)
         ok = m if ok is None else (ok & m)
     return MultiStore(parts), ok
+
+
+def take_columns(X, rows, cols, chunk: int = 50_000) -> np.ndarray:
+    """`np.asarray(X[rows])[:, cols]` 的低記憶體版本；X 可以是 MultiStore 或陣列。"""
+    rows = np.asarray(rows)
+    cols = np.asarray(cols, dtype=np.int64)
+    parts = X.parts if isinstance(X, MultiStore) else [X]
+    out = np.empty((len(rows), len(cols)), dtype=parts[0].dtype)
+    # 每一份特徵庫負責哪些輸出欄位
+    plan, off = [], 0
+    for p in parts:
+        w = int(p.shape[1])
+        sel = np.flatnonzero((cols >= off) & (cols < off + w))
+        if len(sel):
+            plan.append((p, sel, cols[sel] - off))
+        off += w
+    for a in range(0, len(rows), chunk):
+        r = rows[a:a + chunk]
+        for p, sel, local in plan:
+            out[a:a + len(r), sel] = np.asarray(p[r])[:, local]
+    return out
