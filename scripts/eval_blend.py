@@ -56,6 +56,8 @@ GAME = os.environ.get("AICUP_GAME", "cache/rank_mlp_opp_big/models.pt")
 # `cache/cnn_mps/best.pt`；2026-09-22 就這樣讓已上線的 82k 權重在未經評估下
 # 被換掉、而且再也找不回來。新 checkpoint 通過 gate 之後才複製到這裡。
 BOARD = os.environ.get("AICUP_BOARD", "cache/board/best.pt")
+# 板面成分的對稱 TTA 數（1 = 不做）。標籤會帶上它，不同設定的後驗不會混用。
+BOARD_TTA = int(os.environ.get("AICUP_BOARD_TTA", "1"))
 if BOARD and not os.path.exists(BOARD):
     BOARD = ""
 QUESTION = os.environ.get("AICUP_QUESTION", "cache/rank_question_opp/models.pt")
@@ -174,7 +176,7 @@ class Components:
         from aicup.board_posterior import (board_question_posteriors,
                                            groups_from_meta)
         groups = groups_from_meta(self._meta, q.game_rows, cache)
-        return _log(board_question_posteriors(net, nsnap, groups, self.dev))
+        return _log(board_question_posteriors(net, nsnap, groups, self.dev, tta=BOARD_TTA))
 
     def seq(self, q, ckpt=None, stores=None):
         """一個序列 checkpoint 的題目層級 log 後驗。
@@ -282,7 +284,8 @@ def main() -> int:
             # 標籤帶 `set`：集合成員的定義從「snapshot 先平均」改成
             # 「每個 snapshot 各自成員」後，後驗語意變了（Spearman
             # 0.7232 → 0.9207）。換標籤讓舊快取永遠不會被誤用。
-            comps.append(("boardset", comp.board, [BOARD]))
+            comps.append(("boardset" + (f"_tta{BOARD_TTA}" if BOARD_TTA > 1 else ""),
+                          comp.board, [BOARD]))
         for _ck, _st in zip(SEQ, SEQS):
             _tag = f"seq_{os.path.basename(os.path.dirname(_ck))}"
             comps.append((_tag,

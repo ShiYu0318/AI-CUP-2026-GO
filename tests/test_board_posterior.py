@@ -84,3 +84,32 @@ def test_groups_from_meta_reads_the_right_rows():
                      {"file_idx": 1, "row": 7, "color": "W"}])
     g = groups_from_meta(meta, [[0, 1]], FakeCache())
     assert g == [[("sgf-0-5", "B"), ("sgf-1-7", "W")]]
+
+
+def test_dihedral_group_is_complete_and_invertible():
+    """8 種變換兩兩不同，而且都是棋盤的合法對稱（元素多重集合不變）。"""
+    from aicup.board_posterior import dihedral
+    x = np.arange(19 * 19, dtype=np.float32).reshape(1, 19, 19)
+    outs = [dihedral(x, k) for k in range(8)]
+    assert len({o.tobytes() for o in outs}) == 8
+    for o in outs:
+        assert sorted(o.ravel()) == sorted(x.ravel())
+
+
+def test_tta1_is_the_identity_path():
+    """tta=1 必須與不做 TTA 完全相同——預設值不能悄悄改變上線模型的輸出。"""
+    import torch
+    from aicup.board_posterior import board_question_posteriors
+
+    class Net(torch.nn.Module):
+        def forward_set(self, x):
+            s = x.float().mean(dim=(1, 2, 3, 4))           # 每個版本一個數
+            z = torch.stack([s * k for k in range(10)], -1)
+            return {"rank_logits": z, "corn_logits": z[:, :9]}
+
+    g = [[(SGF, "B"), (SGF, "W")]]
+    a = board_question_posteriors(Net(), 4, g, "cpu")
+    b = board_question_posteriors(Net(), 4, g, "cpu", tta=1)
+    assert np.allclose(a, b)
+    c = board_question_posteriors(Net(), 4, g, "cpu", tta=8)
+    assert c.shape == (1, 10) and np.isclose(c.sum(), 1)

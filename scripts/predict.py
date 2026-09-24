@@ -617,6 +617,8 @@ def main() -> int:
                          "每 4776 題約 160 秒，比其他成分貴一個數量級。"
                          "⚠️ 這是**凍結的上線副本**；訓練輸出在 cache/cnn_mps/，"
                          "續訓會原地覆寫那裡，所以絕不能直接指向訓練目錄")
+    ap.add_argument("--board-tta", type=int, default=1,
+                    help="板面成分的棋盤對稱 TTA 數（1 = 不做，8 = 全部）")
     ap.add_argument("--rank-seq", nargs="*",
                     default=["cache/rank_seq_opp/models.pt",
                              "cache/rank_seq_opp_full/models.pt",
@@ -825,7 +827,7 @@ def main() -> int:
                 _bn, _bs, _bd = board
                 parts["board"] = np.log(np.clip(board_question_posteriors(
                     _bn, _bs, groups_from_meta(_meta, game_rows, _bcache_sgf),
-                    _bd), 1e-12, None))
+                    _bd, tta=args.board_tta), 1e-12, None))
             lo = np.log(np.clip(P, 1e-12, None))
             if seq_models:
                 # 每個變體用**自己的**序列庫。24 維的舊變體與 48 維的棋形變體
@@ -944,7 +946,7 @@ def main() -> int:
                                                    groups_from_flat)
                 _bn, _bs, _bd = board
                 pr["board"] = np.log(np.clip(board_question_posteriors(
-                    _bn, _bs, groups_from_flat(fsgf, fcol, fsizes), _bd),
+                    _bn, _bs, groups_from_flat(fsgf, fcol, fsizes), _bd, tta=args.board_tta),
                     1e-12, None))
             lo_ = np.log(np.clip(Pm, 1e-12, None))
             if seq_models:
