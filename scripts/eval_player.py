@@ -15,7 +15,7 @@
 
 用法：
     python3 scripts/eval_player.py --seeds 3
-    AICUP_METRIC=cache/feature_metric_shape/models.pt python3 scripts/eval_player.py
+    AICUP_METRIC=cache/feature_metric_shape8/models.pt python3 scripts/eval_player.py
 """
 from __future__ import annotations
 

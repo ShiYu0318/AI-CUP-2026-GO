@@ -98,9 +98,9 @@ TRACKS = {
     # ⚠️ 競賽一的預設已經換成棋形版（predict.py 的 --feature-metric），
     # 所以基準也必須用棋形版量，否則候選會拿去比一個已經下線的設定。
     "player": {"baseline": 0.2845, "name": "競賽一 身分",
-               "eval": ["python3", "scripts/eval_player.py", "--seeds", "3",
+               "eval": ["python3", "scripts/eval_player.py", "--seeds", "8",
                         "--json-out", "artifacts/player_baseline.json"],
-               "env": {"AICUP_METRIC": "cache/feature_metric_shape/models.pt",
+               "env": {"AICUP_METRIC": "cache/feature_metric_shape8/models.pt",
                        "AICUP_PLAYER_FEATS":
                            "cache/features.npy,cache/features_opp.npy,"
                            "cache/features_shape.npy,cache/features_shape_opp.npy"},
@@ -123,7 +123,9 @@ TRACKS = {
 #   7  競賽一的預設換成棋形版度量模型（0.9389 → 0.9653，最壞組成）
 #   8  競賽二的預設集成補上 seq_qual（它早就上線了，但 eval_blend 的預設漏了，
 #      gate 因此一直在跟一個比生產少一個成分的系統比）＋加入板面 CNN
-GATE_VERSION = 8
+#   9  競賽一的 gate 從 3 個評估 seed 改成 8 個（量測協定要求 ≥8），
+#      預設度量模型換成 8 seed 集成
+GATE_VERSION = 9
 BASELINE = 0.4631      # 官方 baseline（競賽二）
 
 

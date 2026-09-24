@@ -143,6 +143,11 @@ def main() -> int:
                          "長訓練一定要開這個")
     ap.add_argument("--save-every", type=int, default=500,
                     help="每 N 步存一次 last.pt（含 optimizer 與 scheduler 狀態）")
+    ap.add_argument("--ema", type=float, default=0.0,
+                    help="權重指數移動平均的衰減率（0 = 關閉，常用 0.999~0.9998）。"
+                         "每次評估同時量即時權重與 EMA 權重，best.pt 存兩者中 Spearman 較高的。"
+                         "預檢：同軌跡兩顆 checkpoint 的權重平均 Spearman 0.9210 → 0.9221，"
+                         "推論成本為零（RESULTS.md 2.31）")
     ap.add_argument("--max-hours", type=float, default=0.0,
                     help="時間預算（小時）。到點就存檔並正常結束，之後用 --resume 接回。"
                          "Kaggle Notebooks 的 12 小時是硬上限、到點直接砍掉，"
@@ -240,6 +245,15 @@ def main() -> int:
                                      max_questions=8 if args.smoke else args.eval_questions)
     history, best, start_step = [], -1.0, 0
 
+    # EMA 包含 buffer（BN 的 running stats），否則平均後的權重配上即時的 BN 統計量
+    # 會對不上。第一次 update_parameters 會直接複製當下的權重。
+    ema = None
+    if args.ema > 0:
+        from torch.optim.swa_utils import AveragedModel, get_ema_multi_avg_fn
+        ema = AveragedModel(model, multi_avg_fn=get_ema_multi_avg_fn(args.ema),
+                            use_buffers=True)
+        ema.eval()
+
     last_path = os.path.join(args.out, "last.pt")
     if args.resume and os.path.exists(last_path):
         ck = torch.load(last_path, map_location=device, weights_only=False)
@@ -253,6 +267,11 @@ def main() -> int:
         sched.last_epoch = int(ck["sched"]["last_epoch"])
         sched._step_count = int(ck["sched"].get("_step_count", sched.last_epoch + 1))
         history, best, start_step = ck["history"], ck["best"], ck["step"]
+        if ema is not None and "ema" in ck:
+            ema.load_state_dict(ck["ema"])
+            print(f"  EMA 權重已還原（已平均 {int(ema.n_averaged)} 步）")
+        elif ema is not None:
+            print("  last.pt 沒有 EMA 狀態，從目前權重開始平均")
         print(f"從 {last_path} 續訓：已完成 {start_step:,} 步，最佳分數 {best:.4f}")
         if start_step >= args.steps:
             print("已達到指定步數，無需續訓。")
@@ -313,10 +332,22 @@ def main() -> int:
         torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
         opt.step()
         sched.step()
+        if ema is not None:
+            ema.update_parameters(model)
 
         if step % max(1, args.eval_every) == 0 or step == args.steps:
             ev = evaluate_rank(model, meta, questions, device, args.snapshots,
                                max_q=8 if args.smoke else args.eval_questions)
+            best_module = model
+            if ema is not None:
+                ev_ema = evaluate_rank(ema.module, meta, questions, device, args.snapshots,
+                                       max_q=8 if args.smoke else args.eval_questions)
+                ev["spearman_live"] = ev["spearman"]
+                ev["spearman_ema"] = ev_ema["spearman"]
+                if ev_ema["spearman"] > ev["spearman"]:
+                    ev = {**ev_ema, "spearman_live": ev["spearman"],
+                          "spearman_ema": ev_ema["spearman"]}
+                    best_module = ema.module
             rec = {"step": step, "loss": loss.item(), "loss_rank": loss_rank.item(),
                    "loss_corn": loss_corn.item(), "loss_arc": loss_arc.item(),
                    "minutes": (time.time() - t0) / 60, **ev}
@@ -325,12 +356,15 @@ def main() -> int:
                   f" (rank {rec['loss_rank']:.3f} corn {rec['loss_corn']:.3f}"
                   f" arc {rec['loss_arc']:.3f})"
                   f" | Spearman {ev['spearman']:.4f}"
+                  + (f"（即時 {ev['spearman_live']:.4f} / EMA {ev['spearman_ema']:.4f}）"
+                     if ema is not None else "") +
                   f" | 題目分數 期望解碼 {ev['score_expected']:.4f}"
                   f" argmax {ev['score_argmax']:.4f}"
                   f" | {rec['minutes']:.1f} 分", flush=True)
             if ev["spearman"] > best:
                 best = ev["spearman"]
-                torch.save({"model": model.state_dict(), "args": vars(args),
+                torch.save({"model": best_module.state_dict(), "args": vars(args),
+                            "ema": best_module is not model,
                             # 重建模型所需的完整設定。只存 args 是不夠的——
                             # pool / global_pool_bias 曾經漏存，害重新載入時只能猜。
                             "config": gonet_config(model),
@@ -344,6 +378,7 @@ def main() -> int:
             torch.save({"model": model.state_dict(), "arc": arc.state_dict(),
                         "opt": opt.state_dict(), "sched": sched.state_dict(),
                         "step": step, "best": best, "history": history,
+                        **({"ema": ema.state_dict()} if ema is not None else {}),
                         "config": gonet_config(model),
                         "args": vars(args)}, last_path)
         if out_of_time:
