@@ -244,3 +244,16 @@ def seq_question_posteriors(nets, S, ok, lens, game_rows, device, batch: int = 2
         at += len(s_)
         out.append(g / g.sum())
     return np.stack(out)
+
+
+def seq_stores_of(ck_args: dict, cache_dir: str = "cache") -> list:
+    """序列 checkpoint 訓練時用的序列庫路徑（順序照舊），由它自己的 args 推導。
+
+    ⚠️ 不要在呼叫端另外維護「第 i 個變體用哪些庫」的清單。eval_blend 曾經那樣做，
+    清單長度與變體數一對不上就全部套第一組——shape／qual 變體被配到 2 視角的庫，
+    只是因為後驗剛好都命中快取才沒炸（RESULTS.md §2.29）。
+    """
+    import os
+    paths = [ck_args.get("sequences", "cache/sequences.npy")] + \
+        list(ck_args.get("extra_sequences", []) or [])
+    return [os.path.join(cache_dir, os.path.basename(p)) for p in paths]

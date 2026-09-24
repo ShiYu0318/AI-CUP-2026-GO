@@ -125,7 +125,8 @@ TRACKS = {
 #      gate 因此一直在跟一個比生產少一個成分的系統比）＋加入板面 CNN
 #   9  競賽一的 gate 從 3 個評估 seed 改成 8 個（量測協定要求 ≥8），
 #      預設度量模型換成 8 seed 集成
-GATE_VERSION = 9
+#  10  競賽二的序列變體從 5 個精簡成 opp_full + shape（板面上線後其餘冗餘）
+GATE_VERSION = 10
 BASELINE = 0.4631      # 官方 baseline（競賽二）
 
 

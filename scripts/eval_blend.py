@@ -71,9 +71,7 @@ QUESTION = os.environ.get("AICUP_QUESTION", "cache/rank_question_opp/models.pt")
 # 會系統性地拒絕好的集成成員。要問的是「**加進現有集成有沒有幫助**」。
 SEQ = [p for p in os.environ.get(
     "AICUP_SEQ",
-    "cache/rank_seq_opp/models.pt,cache/rank_seq_opp_full/models.pt,"
-    "cache/rank_seq_w192/models.pt,cache/rank_seq_shape/models.pt,"
-    "cache/rank_seq_qual/models.pt").split(",") if p]
+    "cache/rank_seq_opp_full/models.pt,cache/rank_seq_shape/models.pt").split(",") if p]
 # ⚠️ 這份清單必須與 `predict.py --rank-seq` 的預設一致。
 # 2026-09-22 發現 qual 變體上線了卻沒加進這裡，gate 的基準因此
 # 比生產環境少一個成分——量出來的「增益」是相對一個不存在的系統。
@@ -86,20 +84,27 @@ FEATS = os.environ.get(
 # ⚠️ 單局模型與題目層級模型讀**同一份**特徵庫，所以換其中一個的輸入維度
 # 會讓另一個的輸入層對不上。`AICUP_GAME_FEATS` 只換單局模型那一邊。
 GAME_FEATS = [p for p in os.environ.get("AICUP_GAME_FEATS", "").split(",") if p]
-# 每個 checkpoint 一組序列庫，用 ";" 分隔；只給一組就套用到全部。
-# ⚠️ 每個變體一組序列庫（用 ";" 分隔）。shape 變體是 48 維/手、其餘是 24 維/手，
-# 套用同一組庫的話其中一邊的輸入維度會對不上、`load_state_dict` 直接拋錯。
-_DEF_2V = "cache/sequences.npy,cache/sequences_opp.npy"
-_DEF_4V = _DEF_2V + ",cache/seqshape.npy,cache/seqshape_opp.npy"
-_ss = [g.split(",") for g in os.environ.get(
-    "AICUP_SEQ_STORES",
-    ";".join([_DEF_2V, _DEF_2V, _DEF_2V, _DEF_4V])).split(";") if g]
-SEQS = _ss if len(_ss) == len(SEQ) else [_ss[0]] * len(SEQ)
+# 每個 checkpoint 一組序列庫。`AICUP_SEQ_STORES` 可手動指定（";" 分隔、只給一組就套用全部），
+# 但預設**由 checkpoint 自己的 args 推導**——shape 變體 48 維/手、其餘 24 維/手，配錯會讓
+# `load_state_dict` 拋錯（或更糟：被快取命中掩蓋）。
+# 沒有明確指定時，每個 checkpoint 的序列庫由它自己的 args 推導（與 predict.py 相同）。
+_ss = [g.split(",") for g in os.environ.get("AICUP_SEQ_STORES", "").split(";") if g]
+if _ss:
+    SEQS = _ss if len(_ss) == len(SEQ) else [_ss[0]] * len(SEQ)
+else:
+    from aicup.rank_nets import seq_stores_of
+    SEQS = [seq_stores_of(torch.load(c, map_location="cpu", weights_only=False)["args"])
+            for c in SEQ]
 # 附加的候選可以有自己的序列庫（例如棋形庫、240 手庫）
 _es = [g.split(",") for g in os.environ.get("AICUP_SEQ_EXTRA_STORES", "").split(";") if g]
 if _extra:
     SEQ = SEQ + _extra
-    SEQS = SEQS + (_es if len(_es) == len(_extra) else [SEQS[0]] * len(_extra))
+    if _es:
+        SEQS = SEQS + (_es if len(_es) == len(_extra) else [_es[0]] * len(_extra))
+    else:
+        from aicup.rank_nets import seq_stores_of
+        SEQS = SEQS + [seq_stores_of(torch.load(c, map_location="cpu", weights_only=False)["args"])
+                       for c in _extra]
 
 
 def pick_device():

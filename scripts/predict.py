@@ -625,11 +625,11 @@ def main() -> int:
     ap.add_argument("--board-tta", type=int, default=1,
                     help="板面成分的棋盤對稱 TTA 數（1 = 不做，8 = 全部）")
     ap.add_argument("--rank-seq", nargs="*",
-                    default=["cache/rank_seq_opp/models.pt",
-                             "cache/rank_seq_opp_full/models.pt",
-                             "cache/rank_seq_w192/models.pt",
-                             "cache/rank_seq_shape/models.pt",
-                             "cache/rank_seq_qual/models.pt"],
+                    # 板面 CNN 上線後，五個變體彼此冗餘：只留 opp_full + shape
+                    # 與全部五個相比 +0.0003，16 seed 95% CI [−0.0009, +0.0015]
+                    #（RESULTS.md §2.29）。少 3 顆 checkpoint、少 4 份序列庫。
+                    default=["cache/rank_seq_opp_full/models.pt",
+                             "cache/rank_seq_shape/models.pt"],
                     help="競賽二的逐手序列模型（dilated 1D-CNN）。"
                          "589 維是整局的統計摘要，看不到『愚形出現在第 30 手還是第 150 手』。"
                          "**預設是四個變體的集成**，每個變體用**自己的**序列庫"
