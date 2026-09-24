@@ -552,9 +552,9 @@ def main() -> int:
                          "1178 維（含對手視角）0.5402±0.0085 勝過 589 維的 0.4895±0.0090"
                          "（+0.0507，8/8 勝，t=14.84）。"
                          "設為空字串則退回 GBDT（0.4351，不建議）")
-    # 8 seed 集成：相對 3 seed，最壞組成 0.9719 → 0.9774，五種組成全部提升
-    # （dan_only +0.0054，8/8，t=7.03）。RESULTS.md §2.30
-    ap.add_argument("--feature-metric", default="cache/feature_metric_shape8/models.pt",
+    # 8 seed、隱藏層 1024：3 seed/512 → 8 seed/512 最壞組成 0.9719 → 0.9774；
+    # 512 → 1024 再到 0.9822（每 seed 最壞組成 7/8，t=3.16）。RESULTS.md §2.30
+    ap.add_argument("--feature-metric", default="cache/feature_metric_h1024/models.pt",
                     help="競賽一的度量學習模型（目前增益最大：0.6630 -> 0.8125）。"
                          "設為空字串則退回「標準化+L2」的無學習版本")
     ap.add_argument("--stage2", default="",

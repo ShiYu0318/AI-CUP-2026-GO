@@ -100,7 +100,7 @@ TRACKS = {
     "player": {"baseline": 0.2845, "name": "競賽一 身分",
                "eval": ["python3", "scripts/eval_player.py", "--seeds", "8",
                         "--json-out", "artifacts/player_baseline.json"],
-               "env": {"AICUP_METRIC": "cache/feature_metric_shape8/models.pt",
+               "env": {"AICUP_METRIC": "cache/feature_metric_h1024/models.pt",
                        "AICUP_PLAYER_FEATS":
                            "cache/features.npy,cache/features_opp.npy,"
                            "cache/features_shape.npy,cache/features_shape_opp.npy"},
@@ -126,7 +126,8 @@ TRACKS = {
 #   9  競賽一的 gate 從 3 個評估 seed 改成 8 個（量測協定要求 ≥8），
 #      預設度量模型換成 8 seed 集成
 #  10  競賽二的序列變體從 5 個精簡成 opp_full + shape（板面上線後其餘冗餘）
-GATE_VERSION = 10
+#  11  競賽一的預設度量模型換成隱藏層 1024
+GATE_VERSION = 11
 BASELINE = 0.4631      # 官方 baseline（競賽二）
 
 
