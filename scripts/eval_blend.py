@@ -60,6 +60,10 @@ BOARD = os.environ.get("AICUP_BOARD", "cache/board/best.pt")
 BOARD_TTA = int(os.environ.get("AICUP_BOARD_TTA", "1"))
 if BOARD and not os.path.exists(BOARD):
     BOARD = ""
+# 額外的板面 checkpoint（逗號分隔），各自成為一個 stacker 成分。
+# 與序列模型的 AICUP_SEQ_EXTRA 同理：要問的是「**加進現有集成有沒有幫助**」，
+# 不是「單獨比上線那顆好不好」——不同架構／seed 的板面模型可能互補。
+BOARD_EXTRA = [p for p in os.environ.get("AICUP_BOARD_EXTRA", "").split(",") if p]
 QUESTION = os.environ.get("AICUP_QUESTION", "cache/rank_question_opp/models.pt")
 # ⚠️ 預設**就是上線中的三變體集成**，不是單一模型。
 # 實測 seq_full（+0.0053）與 seq_w192（+0.0061）各自都沒過 0.005 門檻，
@@ -286,6 +290,10 @@ def main() -> int:
             # 0.7232 → 0.9207）。換標籤讓舊快取永遠不會被誤用。
             comps.append(("boardset" + (f"_tta{BOARD_TTA}" if BOARD_TTA > 1 else ""),
                           comp.board, [BOARD]))
+        for _bk in BOARD_EXTRA:
+            comps.append((f"boardset_{os.path.basename(os.path.dirname(_bk))}"
+                          + (f"_tta{BOARD_TTA}" if BOARD_TTA > 1 else ""),
+                          (lambda qq, c=_bk: comp.board(qq, c)), [_bk]))
         for _ck, _st in zip(SEQ, SEQS):
             _tag = f"seq_{os.path.basename(os.path.dirname(_ck))}"
             comps.append((_tag,

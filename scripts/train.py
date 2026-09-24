@@ -95,6 +95,9 @@ def main() -> int:
     ap.add_argument("--blocks", type=int, default=10)
     ap.add_argument("--embed-dim", type=int, default=512)
     ap.add_argument("--snapshots", type=int, default=4)
+    ap.add_argument("--seed", type=int, default=0,
+                    help="模型初始化與 P×K 取樣順序的 seed。要訓練多顆板面模型當集成成員時"
+                         "用不同的值；評估題目固定用 seed 0，不同 seed 的模型才可比")
     ap.add_argument("--p", type=int, default=16, help="每個 batch 的玩家數")
     ap.add_argument("--k", type=int, default=4, help="每位玩家的局數")
     ap.add_argument("--steps", type=int, default=2000)
@@ -165,6 +168,8 @@ def main() -> int:
     os.makedirs(args.out, exist_ok=True)
     print(f"device = {device}")
 
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
     meta = load_metadata()
     split = make_player_split(meta, val_frac=0.20, seed=42)
     train_rows = np.flatnonzero(~split.mask(meta))
@@ -190,7 +195,7 @@ def main() -> int:
                      player_to_label=p2l, quality_store=quality_store,
                      quality_cols=quality_cols)
     sampler = PKPlayerSampler(meta, train_rows, p=args.p, k=args.k,
-                              n_batches=args.steps, seed=0)
+                              n_batches=args.steps, seed=args.seed)
     # ⚠️ macOS 的 Python 3.13 預設用 **spawn**，而 spawn 出來的 DataLoader worker
     # 在這個專案裡會卡住——`build_sequence_store.py` 早就踩過同一個坑。
     # 症狀很不明顯：程序活著、不報錯，但 worker 的 CPU 幾乎是 0、

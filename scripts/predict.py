@@ -496,6 +496,8 @@ def check_artifacts(args) -> int:
     if args.board:
         add("競賽二 板面 CNN", args.board,
             "缺了就少 stacker 最強的一個成分（−0.0269）")
+    for _be in args.board_extra:
+        add("競賽二 板面 CNN（附加）", _be, "附加的集成成員")
     add("競賽一 度量學習", args.feature_metric, "缺了就退回無學習的 PlayerBaseline")
     if os.path.exists(args.feature_metric):
         m = _load_metric(args.feature_metric)
@@ -617,6 +619,9 @@ def main() -> int:
                          "每 4776 題約 160 秒，比其他成分貴一個數量級。"
                          "⚠️ 這是**凍結的上線副本**；訓練輸出在 cache/cnn_mps/，"
                          "續訓會原地覆寫那裡，所以絕不能直接指向訓練目錄")
+    ap.add_argument("--board-extra", nargs="*", default=[],
+                    help="額外的板面 CNN checkpoint，各自成為一個 stacker 成分"
+                         "（成分名 board_<目錄名>）。預設不用")
     ap.add_argument("--board-tta", type=int, default=1,
                     help="板面成分的棋盤對稱 TTA 數（1 = 不做，8 = 全部）")
     ap.add_argument("--rank-seq", nargs="*",
@@ -742,16 +747,23 @@ def main() -> int:
     # 板面成分。與序列成分不同，它沒有預先算好的特徵庫——推論時要即時
     # 重播 SGF。所以只在 checkpoint 真的存在時才載入，缺檔就安靜略過
     # （stacker 會少一個成分，但不會整支掛掉）。
-    board = None
-    if args.board and os.path.exists(args.board):
+    # 每顆板面模型一個 stacker 成分：(成分名, net, snapshot 數, device)。
+    # 第一顆的成分名維持 "board"，與舊版的校準／快取完全相容。
+    boards = []
+    _bpaths = ([("board", args.board)] if args.board else []) + [
+        (f"board_{os.path.basename(os.path.dirname(p_))}", p_) for p_ in args.board_extra]
+    for _bname, _bpath in _bpaths:
+        if not os.path.exists(_bpath):
+            continue
         import torch
         from aicup.board_posterior import load_board_net
         _bdev = torch.device("cuda" if torch.cuda.is_available() else
                              "mps" if torch.backends.mps.is_available() else "cpu")
-        _bnet, _bsnap = load_board_net(args.board, _bdev)
-        board = (_bnet, _bsnap, _bdev)
-        print(f"  ＋板面 CNN（{args.board}，{_bsnap} 個 snapshot/局，{_bdev}）",
+        _bnet, _bsnap = load_board_net(_bpath, _bdev)
+        boards.append((_bname, _bnet, _bsnap, _bdev))
+        print(f"  ＋板面 CNN {_bname}（{_bpath}，{_bsnap} 個 snapshot/局，{_bdev}）",
               flush=True)
+    board = boards[0] if boards else None
 
     model = None if rank_mlp else _fit_rank_model("cache/rank_model.pkl",
                                                   args.train_per_rank)
@@ -821,13 +833,13 @@ def main() -> int:
             if rank_question:
                 parts["question"] = _question_log_posteriors(rank_question, _X, _ok,
                                                              game_rows)
-            if board is not None:
+            if boards:
                 from aicup.board_posterior import (board_question_posteriors,
                                                    groups_from_meta)
-                _bn, _bs, _bd = board
-                parts["board"] = np.log(np.clip(board_question_posteriors(
-                    _bn, _bs, groups_from_meta(_meta, game_rows, _bcache_sgf),
-                    _bd, tta=args.board_tta), 1e-12, None))
+                _grp = groups_from_meta(_meta, game_rows, _bcache_sgf)
+                for _bname, _bn, _bs, _bd in boards:
+                    parts[_bname] = np.log(np.clip(board_question_posteriors(
+                        _bn, _bs, _grp, _bd, tta=args.board_tta), 1e-12, None))
             lo = np.log(np.clip(P, 1e-12, None))
             if seq_models:
                 # 每個變體用**自己的**序列庫。24 維的舊變體與 48 維的棋形變體
@@ -941,13 +953,13 @@ def main() -> int:
             else:
                 Pm = model.question_proba(ft, how=args.aggregation)
                 pr = {"game": np.log(np.clip(Pm, 1e-12, None))}
-            if board is not None:
+            if boards:
                 from aicup.board_posterior import (board_question_posteriors,
                                                    groups_from_flat)
-                _bn, _bs, _bd = board
-                pr["board"] = np.log(np.clip(board_question_posteriors(
-                    _bn, _bs, groups_from_flat(fsgf, fcol, fsizes), _bd, tta=args.board_tta),
-                    1e-12, None))
+                _grp = groups_from_flat(fsgf, fcol, fsizes)
+                for _bname, _bn, _bs, _bd in boards:
+                    pr[_bname] = np.log(np.clip(board_question_posteriors(
+                        _bn, _bs, _grp, _bd, tta=args.board_tta), 1e-12, None))
             lo_ = np.log(np.clip(Pm, 1e-12, None))
             if seq_models:
                 bc = {}
