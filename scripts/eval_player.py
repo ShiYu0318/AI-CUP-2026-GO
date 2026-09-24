@@ -106,7 +106,10 @@ def main() -> int:
         a = np.array(rows[comp])
         out[comp] = {"mean": float(a.mean()), "std": float(a.std(ddof=1))
                      if len(a) > 1 else 0.0,
-                     "top1": float(np.mean(rows[f"_top1_{comp}"]))}
+                     "top1": float(np.mean(rows[f"_top1_{comp}"])),
+                     # 逐 seed 的分數：比較兩個模型時要做**配對**差，
+                     # 只存平均與標準差的話，seed 間的共同變異會把差距淹沒。
+                     "scores": [float(x) for x in a]}
         print(f"  {comp:<10} {a.mean():.4f} ±{out[comp]['std']:.4f}")
         if a.mean() < worst:
             worst, worst_name = float(a.mean()), comp
