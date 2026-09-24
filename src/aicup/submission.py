@@ -123,3 +123,29 @@ def write_submission(df: pd.DataFrame, path: str, kind: str, **kwargs) -> str:
         raise ValueError(kind)
     df.to_csv(path, index=False)
     return path
+
+
+# 官方測試檔的檔名。主辦方的教材前後用過兩套寫法——
+# 課程投影片 EP1 寫 `rank_test_public.csv`、`player_test` + `candidates`，
+# 而 tutorial repo / 本專案的模擬測試集用 `rank_prediction_test_public.csv`。
+# 比賽當天（11/04）才知道實際是哪一套，所以每個開測試檔的地方都走這裡，
+# 依序嘗試已知的寫法。都找不到就回傳第一個（標準名），讓 `--check` 照常報缺檔。
+TEST_FILE_NAMES = {
+    "rank": ("rank_prediction_test_{t}.csv", "rank_test_{t}.csv",
+             "rank_prediction_{t}.csv"),
+    "player": ("player_identification_test_{t}.csv", "player_test_{t}.csv",
+               "player_identification_{t}.csv"),
+    "candidates": ("player_identification_candidates_{t}.csv",
+                   "player_candidates_{t}.csv", "candidates_{t}.csv"),
+}
+
+
+def resolve_test_file(test_dir: str, kind: str, tag: str) -> str:
+    """kind ∈ {"rank", "player", "candidates"}，tag ∈ {"public", "private"}。"""
+    import os
+    names = [n.format(t=tag) for n in TEST_FILE_NAMES[kind]]
+    found = [n for n in names if os.path.exists(os.path.join(test_dir, n))]
+    if len(found) > 1:
+        raise FileExistsError(
+            f"{test_dir} 裡同時有 {found}——不知道該用哪一份，請刪掉多餘的")
+    return os.path.join(test_dir, found[0] if found else names[0])

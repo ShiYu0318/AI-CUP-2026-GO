@@ -31,7 +31,7 @@ from aicup.scoring import (apply_temperature, decode_expected_score,   # noqa: E
                            rank_final_score, top_k_from_similarity,
                            player_final_score, fit_temperature,
                            optimise_thresholds, apply_thresholds, expected_level)
-from aicup.submission import (build_rank_submission, build_player_submission,  # noqa: E402
+from aicup.submission import (resolve_test_file, build_rank_submission, build_player_submission,  # noqa: E402
                               write_submission)
 
 MAX_GAMES = 20
@@ -150,8 +150,7 @@ def _crosstask_games(tag: str, feats, args, metric):
     if metric is None:
         print("  跨子題增強：沒有度量學習模型，略過", flush=True)
         return None
-    path = os.path.join(args.test_dir,
-                        f"player_identification_candidates_{tag}.csv")
+    path = resolve_test_file(args.test_dir, "candidates", tag)
     if not os.path.exists(path):
         print(f"  跨子題增強：找不到 {path}，略過", flush=True)
         return None
@@ -180,7 +179,7 @@ def _crosstask_games(tag: str, feats, args, metric):
     # 獨立且**definitive** 的判準：棋譜字串直接重疊。
     # 若主辦方是從同一份測試資料衍生兩個子題，棋力題的棋譜會原封不動
     # 出現在候選庫裡。這個訊號比 embedding 強得多，而且零成本。
-    _rp = os.path.join(args.test_dir, f"rank_prediction_test_{tag}.csv")
+    _rp = resolve_test_file(args.test_dir, "rank", tag)
     overlap = 0.0
     if os.path.exists(_rp):
         _rk = pd.read_csv(_rp)
@@ -504,9 +503,8 @@ def check_artifacts(args) -> int:
             for st in m[4]:
                 add("　└ 它需要的特徵庫", st, "推論時會即時重算，但維度要對得上")
     for tg in ("public", "private"):
-        for kind in ("rank_prediction_test", "player_identification_test",
-                     "player_identification_candidates"):
-            add("測試集", os.path.join(args.test_dir, f"{kind}_{tg}.csv"), "官方檔案")
+        for kind in ("rank", "player", "candidates"):
+            add("測試集", resolve_test_file(args.test_dir, kind, tg), "官方檔案")
 
     seen, uniq = set(), []
     for r in rows:
@@ -764,7 +762,7 @@ def main() -> int:
     ct_plan: dict = {}
     if args.crosstask:
         for _tg in ("public", "private"):
-            _pth = os.path.join(args.test_dir, f"rank_prediction_test_{_tg}.csv")
+            _pth = resolve_test_file(args.test_dir, "rank", _tg)
             if not os.path.exists(_pth):
                 continue
             _dft = pd.read_csv(_pth)
@@ -895,7 +893,7 @@ def main() -> int:
 
     qids, preds, truth = [], [], []
     for tag in ("public", "private"):
-        path = os.path.join(args.test_dir, f"rank_prediction_test_{tag}.csv")
+        path = resolve_test_file(args.test_dir, "rank", tag)
         df = pd.read_csv(path)
         t0 = time.time()
         from aicup.question_model import blend_log_posteriors as _blp
@@ -1006,8 +1004,7 @@ def main() -> int:
 
     all_qids, all_top5, all_truth = [], [], []
     for tag in ("public", "private"):
-        cand = pd.read_csv(os.path.join(
-            args.test_dir, f"player_identification_candidates_{tag}.csv"))
+        cand = pd.read_csv(resolve_test_file(args.test_dir, "candidates", tag))
         t0 = time.time()
         _mstores = metric[4] if metric is not None else ["cache/features.npy"]
         Xc, okc = _metric_features(cand["sgf_content"].tolist(),
@@ -1033,8 +1030,7 @@ def main() -> int:
         print(f"  {tag:<8} 候選庫 {len(names)} 人 / {len(cand):,} 局，"
               f"{time.time() - t0:.0f} 秒")
 
-        df = pd.read_csv(os.path.join(
-            args.test_dir, f"player_identification_test_{tag}.csv"))
+        df = pd.read_csv(resolve_test_file(args.test_dir, "player", tag))
         feats = _metric_question_features(df, _mstores)
         Q = np.stack([make_tpl(f) if len(f) else np.zeros(G.shape[1]) for f in feats])
         sim = Q @ G.T
@@ -1066,8 +1062,7 @@ def main() -> int:
     sub = build_player_submission(all_qids, all_top5)
     pools = {}
     for tag, key in (("public", "pub"), ("private", "priv")):
-        c = pd.read_csv(os.path.join(
-            args.test_dir, f"player_identification_candidates_{tag}.csv"))
+        c = pd.read_csv(resolve_test_file(args.test_dir, "candidates", tag))
         pools[key] = set(c["player_id"].unique())
     path = write_submission(sub, os.path.join(args.out_dir, "submission_player.csv"),
                             "player", public_candidates=pools["pub"],

@@ -41,6 +41,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from aicup.rerank import bijection_consistency                  # noqa: E402
+from aicup.submission import resolve_test_file                          # noqa: E402
 
 # 判準門檻。兩個都很保守——這個增強一旦用錯是災難性的，
 # 寧可放過機會也不要賭。
@@ -71,9 +72,8 @@ def main() -> int:
 
     verdicts = {}
     for tag in args.tags:
-        rp = os.path.join(args.test_dir, f"rank_prediction_test_{tag}.csv")
-        cp = os.path.join(args.test_dir,
-                          f"player_identification_candidates_{tag}.csv")
+        rp = resolve_test_file(args.test_dir, "rank", tag)
+        cp = resolve_test_file(args.test_dir, "candidates", tag)
         if not (os.path.exists(rp) and os.path.exists(cp)):
             print(f"  {tag}: 找不到檔案，跳過（{rp} / {cp}）")
             continue
