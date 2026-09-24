@@ -52,7 +52,10 @@ GAME = os.environ.get("AICUP_GAME", "cache/rank_mlp_opp_big/models.pt")
 # 一致——gate 的基準若比生產少一個成分，量出來的增益是相對一個不存在的系統。
 # 它貴：每組題目要即時重播 SGF 產生 34×19×19 的張量，約 160 秒。
 # 但那是**每個題目 seed 一次**，之後全部命中 OOF 快取。
-BOARD = os.environ.get("AICUP_BOARD", "cache/cnn_mps/best.pt")
+# ⚠️ 指向**上線的凍結副本**，不是訓練輸出目錄。`train.py --resume` 會原地覆寫
+# `cache/cnn_mps/best.pt`；2026-09-22 就這樣讓已上線的 82k 權重在未經評估下
+# 被換掉、而且再也找不回來。新 checkpoint 通過 gate 之後才複製到這裡。
+BOARD = os.environ.get("AICUP_BOARD", "cache/board/best.pt")
 if BOARD and not os.path.exists(BOARD):
     BOARD = ""
 QUESTION = os.environ.get("AICUP_QUESTION", "cache/rank_question_opp/models.pt")

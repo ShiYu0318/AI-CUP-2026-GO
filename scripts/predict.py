@@ -607,14 +607,16 @@ def main() -> int:
                          "固定權重融合 0.5639 → stacker 0.5727"
                          "（+0.0088，8/8 勝，t=5.00）。C 從 0.3 到 3.0 是平台。"
                          "stacker 在**校準題目**上現場擬合，套用到測試集")
-    ap.add_argument("--board", default="cache/cnn_mps/best.pt",
+    ap.add_argument("--board", default="cache/board/best.pt",
                     help="競賽二的板面 CNN（34x19x19 的盤面快照 → 集合池化）。"
                          "空字串 = 不使用。這是集成裡唯一直接看盤面的成分，"
                          "與其他成分的輸入完全不重疊：加進來 "
                          "**+0.0269 ±0.0050（8/8 勝，t=15.32）**，"
                          "是專案至今最大的單一增益（RESULTS.md 2.27）。"
                          "代價：推論要即時把每盤棋重播成張量，"
-                         "每 4776 題約 160 秒，比其他成分貴一個數量級")
+                         "每 4776 題約 160 秒，比其他成分貴一個數量級。"
+                         "⚠️ 這是**凍結的上線副本**；訓練輸出在 cache/cnn_mps/，"
+                         "續訓會原地覆寫那裡，所以絕不能直接指向訓練目錄")
     ap.add_argument("--rank-seq", nargs="*",
                     default=["cache/rank_seq_opp/models.pt",
                              "cache/rank_seq_opp_full/models.pt",
