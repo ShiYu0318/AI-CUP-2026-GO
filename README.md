@@ -84,10 +84,13 @@ src/aicup/
 ├── losses.py         指數 soft label、CORN、成對排序、sub-center ArcFace
 ├── nets.py           板面 CNN：共用 backbone 的多任務網路（GeM + BN-Neck + Set Transformer）
 ├── rank_nets.py      競賽二的單局 MLP 與逐手序列模型（CNN / GRU）＋題目層級推論
+├── board_posterior.py 板面 CNN 的題目層級後驗（校準、推論、評估共用）
+├── sgfstore.py       全部 SGF 打包成共用的 memory-mapped 檔
 ├── experiment_log.py 統一的實驗紀錄（含機器時間）
 └── submission.py     提交檔產生與官方格式驗證
 
-scripts/                          # 31 支，以下是主要的
+scripts/                          # 32 支，以下是主要的
+├── build_sgf_store.py            SGF 打包檔（8 秒；讓多程序／多 worker 共用記憶體）
 ├── build_feature_store.py        整局特徵庫
 ├── build_sequence_store.py       逐手序列庫（--shape / --quality / --opponent）
 ├── build_shape_features.py       逐手棋形聚合成整局統計

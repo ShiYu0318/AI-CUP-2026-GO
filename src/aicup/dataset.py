@@ -26,14 +26,27 @@ from .planes import game_planes, n_planes, planes_to_float
 
 
 class SgfCache:
-    """依 (file_idx, row) 取 sgf_content。整個檔案只在第一次用到時載入。"""
+    """依 (file_idx, row) 取 sgf_content。
 
-    def __init__(self, training_dir: str = "training", max_files: int = 10):
+    若 `cache/sgf_blob.bin` 存在且與 CSV 一致（`scripts/build_sgf_store.py`），
+    就改讀那份 memory-mapped 打包檔——所有程序與 DataLoader worker 共用同一份
+    實體記憶體。否則退回舊行為：每個 CSV 在第一次用到時整份載入（約 3 GB/程序）。
+    """
+
+    def __init__(self, training_dir: str = "training", max_files: int = 10,
+                 use_store: bool = True):
         self.files = training_files(training_dir)
         self.max_files = max_files
         self._cache: dict[int, np.ndarray] = {}
+        self.store = None
+        if use_store:
+            from .sgfstore import SgfStore, is_valid
+            if is_valid(self.files):
+                self.store = SgfStore()
 
     def get(self, file_idx: int, row: int) -> str:
+        if self.store is not None:
+            return self.store.get(file_idx, row)
         arr = self._cache.get(file_idx)
         if arr is None:
             if len(self._cache) >= self.max_files:
