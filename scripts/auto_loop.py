@@ -100,7 +100,7 @@ TRACKS = {
     "player": {"baseline": 0.2845, "name": "競賽一 身分",
                "eval": ["python3", "scripts/eval_player.py", "--seeds", "8",
                         "--json-out", "artifacts/player_baseline.json"],
-               "env": {"AICUP_METRIC": "cache/feature_metric_h1024s6k/models.pt",
+               "env": {"AICUP_METRIC": "cache/feature_metric_h1024s12k/models.pt",
                        "AICUP_PLAYER_FEATS":
                            "cache/features.npy,cache/features_opp.npy,"
                            "cache/features_shape.npy,cache/features_shape_opp.npy"},
@@ -128,7 +128,8 @@ TRACKS = {
 #  10  競賽二的序列變體從 5 個精簡成 opp_full + shape（板面上線後其餘冗餘）
 #  11  競賽一的預設度量模型換成隱藏層 1024
 #  12  競賽一的度量模型再改 6000 步
-GATE_VERSION = 12
+#  13  競賽一的度量模型再改 12000 步
+GATE_VERSION = 13
 BASELINE = 0.4631      # 官方 baseline（競賽二）
 
 
