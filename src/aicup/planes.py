@@ -81,10 +81,12 @@ def _snapshot_indices(n_moves: int, n_snapshots: int, min_move: int = 20) -> np.
 
 def game_planes(sgf: str, color: str | int, *, n_snapshots: int = 8,
                 n_history: int = N_HISTORY, buckets: int = LIBERTY_BUCKETS,
-                n_last: int = N_LAST_MOVES) -> np.ndarray | None:
+                n_last: int = N_LAST_MOVES, indices=None) -> np.ndarray | None:
     """把一局棋轉成 (n_snapshots, C, 19, 19) 的 uint8 張量。
 
     回傳 None 表示棋局太短或無法解析。
+    indices：直接指定要在「第幾手下完之後」取局面（0 起算）；給了就忽略 n_snapshots
+    與 30 手的長度門檻。走法模型（`aicup.skillpolicy`）用它取「輪到我方下」的局面。
     """
     # ⚠️ 嚴格解析，不要退回 `BLACK if color == "B" else WHITE`。
     # 那個寫法會把 "b"、"black"、" B" 全部當成白棋——所有黑棋局用錯視角，
@@ -96,10 +98,14 @@ def game_planes(sgf: str, color: str | int, *, n_snapshots: int = 8,
 
     moves = parse_moves(sgf)
     n = len(moves)
-    if n < 30:
-        return None
-
-    want = set(_snapshot_indices(n, n_snapshots).tolist())
+    if indices is not None:
+        want = {int(i) for i in indices if 0 <= int(i) < n}
+        if not want:
+            return None
+    else:
+        if n < 30:
+            return None
+        want = set(_snapshot_indices(n, n_snapshots).tolist())
     C = n_planes(n_history, buckets, n_last)
     out = []
 
