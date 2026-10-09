@@ -61,6 +61,16 @@ def hs_part(feats_per_q, mode: str) -> np.ndarray:
     return np.array(out)
 
 
+def hs_extra(feats_per_q) -> np.ndarray:
+    """論文的另一半特徵：各盤平均的首選一致率（10 profile）與目數損失的 4 個統計量。"""
+    lo, hi = FEATURE_NAMES.index("top1_" + "rank_11k"), FEATURE_NAMES.index("n_used")
+    out = []
+    for fs in feats_per_q:
+        v = [f[lo:hi] for f in fs if f is not None and not np.isnan(f[lo:hi]).any()]
+        out.append(np.mean(v, axis=0) if v else np.zeros(hi - lo))
+    return np.array(out)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seeds", type=int, default=8)
@@ -70,6 +80,8 @@ def main() -> int:
     ap.add_argument("--players", type=int, default=0,
                     help="只用棋池順序上前 N 位已完成的玩家（0 = 全部）。比較不同設定時要固定，"
                          "否則棋池還在長，兩次評估的題目不同、基準也不同")
+    ap.add_argument("--extra", action="store_true",
+                    help="除了對數似然，再把首選一致率與目數損失當成 stacker 的額外特徵")
     ap.add_argument("--store", default="cache/humansl/games.jsonl")
     ap.add_argument("--json-out", default=None)
     args = ap.parse_args()
@@ -118,7 +130,9 @@ def main() -> int:
         for name, fn, paths in comps:
             tag = f"hspool_{name}__{os.path.basename(os.path.dirname(paths[0]))}"
             parts[name], _, _ = oof.get(tag, q, lambda f=fn: f(q), model_paths=paths)
-        hs = hs_part([[store.get(keys[int(r)]) for r in g] for g in gr], args.mode)
+        fq = [[store.get(keys[int(r)]) for r in g] for g in gr]
+        hs = hs_part(fq, args.mode)
+        ex = hs_extra(fq) if args.extra else None
         sizes = np.array([len(g) for g in gr], dtype=float)
         y = q.true_rank_id; up = np.array(sorted(set(pid)))
         row = {"base": [], "hs": []}
@@ -128,6 +142,8 @@ def main() -> int:
             cal, sco = np.flatnonzero(inc), np.flatnonzero(~inc)
             for k, ps in (("base", parts), ("hs", {**parts, "humansl": hs})):
                 F = stack_features(ps, sizes)
+                if k == "hs" and ex is not None:
+                    F = np.hstack([F, ex])
                 ev = Stacker(C=1.0).fit(F[cal], y[cal], parts=ps).expected_level(F)
                 th = optimise_thresholds(ev[cal], y[cal]); pr = apply_thresholds(ev[sco], th)
                 row[k].append(rank_final_score(pr, y[sco]))
@@ -141,7 +157,8 @@ def main() -> int:
 
     a, b = np.array(res["base"]), np.array(res["hs"]); d = b - a
     se = d.std(ddof=1) / np.sqrt(len(d)) if len(d) > 1 else float("nan")
-    print(f"\n=== {len(done)} 位玩家、{args.seeds} seed x {args.splits} 切分（mode={args.mode}）===")
+    print(f"\n=== {len(done)} 位玩家、{args.seeds} seed x {args.splits} 切分"
+          f"（mode={args.mode}{'＋額外特徵' if args.extra else ''}）===")
     print(f"  生產 stacker      {a.mean():.4f}")
     print(f"  ＋HumanSL         {b.mean():.4f}")
     print(f"  配對差            {d.mean():+.4f} ±{d.std(ddof=1):.4f}，{(d > 0).sum()}/{len(d)} 勝，t={d.mean() / se:.2f}")
