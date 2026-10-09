@@ -228,3 +228,57 @@ def question_loglik(feats: list) -> np.ndarray:
             continue
         acc += f[:N_PROFILES] * f[n_used]
     return acc
+
+
+def question_log_posterior(feats_per_q, mode: str = "sum") -> np.ndarray:
+    """多題 → HumanSL 成分的 log 後驗 (n_questions, N_PROFILES)，給 stacker 用。
+
+    sum：所有手數的對數似然加總——盤數越多、證據越強（生成式分類的原意）。
+    mean：除以總手數的每手平均——尺度穩定，盤數交給 stacker 的 log(盤數) 特徵。
+    """
+    n_used = FEATURE_NAMES.index("n_used")
+    out = []
+    for fs in feats_per_q:
+        L = question_loglik(fs)
+        if mode == "mean":
+            L = L / max(sum(f[n_used] for f in fs if f is not None), 1.0)
+        m = L.max()
+        out.append(L - (m + np.log(np.exp(L - m).sum())))
+    return np.array(out)
+
+
+POOL_FILE = "cache/humansl/pool.npz"
+
+
+def pool_players(meta, store: "HumanSLStore", sgf_cache, pool_file: str = POOL_FILE) -> tuple:
+    """棋池中「全部盤數都已算完 HumanSL」的玩家 → 他們的 meta 列索引；外加每列的鍵。
+
+    回傳 (done, keys)：done 依棋池順序排列（各等級輪流），keys 是 列索引 → 鍵。
+    """
+    rows = np.load(pool_file)["rows"]
+    keys = {int(r): game_key(sgf_cache.get(int(meta.at[r, "file_idx"]), int(meta.at[r, "row"])),
+                             meta.at[r, "color"]) for r in rows}
+    by_player: dict = {}
+    for r in rows:
+        by_player.setdefault(meta.at[int(r), "player_id"], []).append(int(r))
+    done = {p: rs for p, rs in by_player.items() if all(keys[r] in store for r in rs)}
+    return done, keys
+
+
+def pool_questions(meta, done: dict, per_player: int, seed: int,
+                   sizes=(5, 10, 15, 20)):
+    """從棋池玩家出題：每位 per_player 題，局數照官方分布（各盤數機率相同）。
+
+    回傳與 `aicup.benchmark.build_rank_questions` 相同介面的物件
+    （.game_rows / .true_rank_id / .player_id），下游的校準流程不必改。
+    """
+    from types import SimpleNamespace
+    rng = np.random.default_rng(seed)
+    gr, y, pid = [], [], []
+    for p in done:
+        rs = done[p]
+        for _ in range(per_player):
+            n = int(rng.choice(sizes))
+            gr.append(np.array(sorted(rng.choice(rs, min(n, len(rs)), replace=False)), dtype=np.int64))
+            y.append(int(meta.at[rs[0], "rank_id"])); pid.append(p)
+    return SimpleNamespace(game_rows=gr, true_rank_id=np.array(y), player_id=np.array(pid, dtype=object))

@@ -17,19 +17,18 @@ import importlib.util
 import json
 import os
 import sys
-from types import SimpleNamespace
 
 import numpy as np
 import torch
 
 from aicup.data import load_metadata
 from aicup.dataset import SgfCache
-from aicup.humansl import HumanSLStore, N_PROFILES, FEATURE_NAMES, game_key, question_loglik
+from aicup.humansl import (FEATURE_NAMES, HumanSLStore, pool_players, pool_questions,
+                           question_log_posterior)
 from aicup.oofcache import OofCache
 from aicup.scoring import apply_thresholds, optimise_thresholds, rank_final_score
 from aicup.stacker import Stacker, stack_features
 
-POOL_FILE = "cache/humansl/pool.npz"
 SIZES = (5, 10, 15, 20)
 
 
@@ -43,22 +42,6 @@ def _eval_blend():
     finally:
         sys.argv = argv
     return eb
-
-
-def hs_part(feats_per_q, mode: str) -> np.ndarray:
-    """一題的 HumanSL 成分（log 後驗形式）。
-
-    sum：所有手數的對數似然加總——盤數越多、證據越強（生成式分類的原意）。
-    mean：除以總手數的每手平均——尺度穩定，盤數交給 stacker 的 log(盤數) 特徵。
-    """
-    n_used = FEATURE_NAMES.index("n_used")
-    out = []
-    for fs in feats_per_q:
-        L = question_loglik(fs)
-        if mode == "mean":
-            L = L / max(sum(f[n_used] for f in fs if f is not None), 1.0)
-        out.append(L - (L.max() + np.log(np.exp(L - L.max()).sum())))
-    return np.array(out)
 
 
 def hs_extra(feats_per_q) -> np.ndarray:
@@ -89,19 +72,13 @@ def main() -> int:
     eb = _eval_blend()
     meta = load_metadata()
     store = HumanSLStore(args.store)
-    rows = np.load(POOL_FILE)["rows"]
-    cache_sgf = SgfCache()
-    keys = {int(r): game_key(cache_sgf.get(int(meta.at[r, "file_idx"]), int(meta.at[r, "row"])),
-                             meta.at[r, "color"]) for r in rows}
-    by_player: dict = {}
-    for r in rows:
-        by_player.setdefault(meta.at[r, "player_id"], []).append(int(r))
-    done = {p: rs for p, rs in by_player.items() if all(keys[r] in store for r in rs)}
+    done, keys = pool_players(meta, store, SgfCache())
+    n_pool = len(np.load("cache/humansl/pool.npz")["rows"]) // 20
     if args.players:
-        order = list(dict.fromkeys(meta.at[int(r), "player_id"] for r in rows))   # 棋池順序
-        done = {p: done[p] for p in [q for q in order if q in done][:args.players]}
+        done = dict(list(done.items())[:args.players])          # 棋池順序（各等級輪流）
+    done = {p: done[p] for p in sorted(done)}
     ranks = np.bincount([int(meta.at[rs[0], "rank_id"]) for rs in done.values()], minlength=10)
-    print(f"棋池 {len(by_player)} 位玩家，HumanSL 已完成 {len(done)} 位；各等級 {ranks.tolist()}", flush=True)
+    print(f"棋池 {n_pool} 位玩家，HumanSL 已完成 {len(done)} 位；各等級 {ranks.tolist()}", flush=True)
     if len(done) < 50:
         print("完成的玩家太少，先不評估"); return 1
 
@@ -111,15 +88,8 @@ def main() -> int:
     res = {"base": [], "hs": []}
     acc = {k: {s: [] for s in SIZES} for k in res}
     for seed in range(args.seeds):
-        rng = np.random.default_rng(7000 + seed)
-        gr, y, pid = [], [], []
-        for p in sorted(done):
-            rs = done[p]
-            for _ in range(args.per_player):
-                n = int(rng.choice(SIZES))
-                gr.append(np.array(sorted(rng.choice(rs, n, replace=False)), dtype=np.int64))
-                y.append(int(meta.at[rs[0], "rank_id"])); pid.append(p)
-        q = SimpleNamespace(game_rows=gr, true_rank_id=np.array(y), player_id=np.array(pid, dtype=object))
+        q = pool_questions(meta, done, args.per_player, 7000 + seed, SIZES)
+        gr, pid = q.game_rows, list(q.player_id)
         parts = {}
         comps = [("game", comp.game, [eb.GAME]), ("question", comp.question, [eb.QUESTION])]
         if eb.BOARD:
@@ -131,7 +101,7 @@ def main() -> int:
             tag = f"hspool_{name}__{os.path.basename(os.path.dirname(paths[0]))}"
             parts[name], _, _ = oof.get(tag, q, lambda f=fn: f(q), model_paths=paths)
         fq = [[store.get(keys[int(r)]) for r in g] for g in gr]
-        hs = hs_part(fq, args.mode)
+        hs = question_log_posterior(fq, args.mode)
         ex = hs_extra(fq) if args.extra else None
         sizes = np.array([len(g) for g in gr], dtype=float)
         y = q.true_rank_id; up = np.array(sorted(set(pid)))
