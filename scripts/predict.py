@@ -498,6 +498,23 @@ def check_artifacts(args) -> int:
             "缺了就少 stacker 最強的一個成分（−0.0269）")
     for _be in args.board_extra:
         add("競賽二 板面 CNN（附加）", _be, "附加的集成成員")
+    if args.humansl:
+        from aicup.humansl import HUMAN_MODEL, POOL_FILE, HumanSLStore, game_key
+        add("競賽二 HumanSL 模型", HUMAN_MODEL, "KataGo HumanSL 權重（只在建儲存檔時需要）")
+        add("競賽二 HumanSL 棋池", POOL_FILE, "校準題來源")
+        if os.path.exists(args.humansl_store):
+            _st = HumanSLStore(args.humansl_store)
+            _tot = _miss = 0
+            for _tg in ("public", "private"):
+                _p = resolve_test_file(args.test_dir, "rank", _tg)
+                if os.path.exists(_p):
+                    _fs, _fc, _ = _flatten_questions(pd.read_csv(_p))
+                    _tot += len(_fs)
+                    _miss += sum(game_key(a, b) not in _st for a, b in zip(_fs, _fc))
+            rows.append(("競賽二 HumanSL 測試集", args.humansl_store, _tot > 0 and _miss == 0,
+                         f"測試集 {_tot} 盤中缺 {_miss} 盤；補算：build_humansl_store.py --test-dir"))
+        else:
+            add("競賽二 HumanSL 儲存檔", args.humansl_store, "build_humansl_store.py 的輸出")
     add("競賽一 度量學習", args.feature_metric, "缺了就退回無學習的 PlayerBaseline")
     if os.path.exists(args.feature_metric):
         m = _load_metric(args.feature_metric)
@@ -623,6 +640,15 @@ def main() -> int:
     ap.add_argument("--board-extra", nargs="*", default=[],
                     help="額外的板面 CNN checkpoint，各自成為一個 stacker 成分"
                          "（成分名 board_<目錄名>）。預設不用")
+    ap.add_argument("--humansl", action="store_true",
+                    help="加入 KataGo HumanSL 成分（10 種棋力下每一手的走法機率）。"
+                         "中期評估 +0.03（4/4，t=5.6，RESULTS.md §2.32）。"
+                         "需要事先算好：棋池（build_humansl_store.py --pool，校準用）與"
+                         "測試集（build_humansl_store.py --test-dir）。任何一盤缺特徵就報錯，不會靜默降級")
+    ap.add_argument("--humansl-store", default="cache/humansl/games.jsonl")
+    ap.add_argument("--humansl-mode", choices=["sum", "mean"], default="sum")
+    ap.add_argument("--humansl-per-player", type=int, default=6,
+                    help="校準時棋池中每位玩家出幾題（800 位 x 6 ≈ 現行校準集的 4,776 題）")
     ap.add_argument("--board-tta", type=int, default=1,
                     help="板面成分的棋盤對稱 TTA 數（1 = 不做，8 = 全部）")
     ap.add_argument("--rank-seq", nargs="*",
@@ -802,6 +828,21 @@ def main() -> int:
         _meta = load_metadata()
         _split = _mps(_meta, val_frac=0.20, seed=42)
         _q = _brq(_meta, _split, n_per_player=3, seed=0)
+        _hs_store = _hs_keys = None
+        if args.humansl:
+            # HumanSL 每盤約 2.5 秒，不可能為驗證集的全部棋（約 20 萬盤）都算；
+            # 校準題改從「已算完的固定棋池」出（RESULTS.md §2.32）。
+            from aicup.dataset import SgfCache as _SC
+            from aicup.humansl import HumanSLStore, pool_players, pool_questions
+            if args._crosstask_active:
+                raise SystemExit("--humansl 與跨子題增強不能同時使用：增強用的候選人棋不在 HumanSL 棋池裡")
+            _hs_store = HumanSLStore(args.humansl_store)
+            _hs_done, _hs_keys = pool_players(_meta, _hs_store, _SC())
+            if len(_hs_done) < 200:
+                raise SystemExit(f"HumanSL 棋池只完成 {len(_hs_done)} 位玩家（至少要 200），"
+                                 "先跑 scripts/build_humansl_store.py --pool")
+            _q = pool_questions(_meta, _hs_done, args.humansl_per_player, seed=0)
+            print(f"  校準題改用 HumanSL 棋池：{len(_hs_done)} 位玩家、{len(_q.game_rows)} 題", flush=True)
         # 校準題目的等級分布決定了切點的位置。預設 natural（校準集自身的分布）。
         # 若 11/04 拿到公開測試集後判定官方的分布更接近平衡，改這個旗標即可，
         # 不必動程式碼——實測固定先驗之間最壞情況差 0.010（RESULTS.md §2.7）。
@@ -841,6 +882,15 @@ def main() -> int:
                 for _bname, _bn, _bs, _bd in boards:
                     parts[_bname] = np.log(np.clip(board_question_posteriors(
                         _bn, _bs, _grp, _bd, tta=args.board_tta), 1e-12, None))
+            if args.humansl:
+                from aicup.humansl import question_log_posterior
+                _miss = [int(r) for rows_ in game_rows for r in rows_
+                         if _hs_keys.get(int(r)) not in _hs_store]
+                if _miss:
+                    raise SystemExit(f"校準題有 {len(_miss)} 盤沒有 HumanSL 特徵（例如 meta 列 {_miss[:3]}）")
+                parts["humansl"] = question_log_posterior(
+                    [[_hs_store.get(_hs_keys[int(r)]) for r in rows_] for rows_ in game_rows],
+                    args.humansl_mode)
             lo = np.log(np.clip(P, 1e-12, None))
             if seq_models:
                 # 每個變體用**自己的**序列庫。24 維的舊變體與 48 維的棋形變體
@@ -961,6 +1011,18 @@ def main() -> int:
                 for _bname, _bn, _bs, _bd in boards:
                     pr[_bname] = np.log(np.clip(board_question_posteriors(
                         _bn, _bs, _grp, _bd, tta=args.board_tta), 1e-12, None))
+            if args.humansl:
+                from aicup.humansl import game_key, question_log_posterior
+                _k = [game_key(s_, c_) for s_, c_ in zip(fsgf, fcol)]
+                _miss = sum(k_ not in _hs_store for k_ in _k)
+                if _miss:
+                    raise SystemExit(
+                        f"測試集有 {_miss}/{len(_k)} 盤沒有 HumanSL 特徵。先跑："
+                        f"python3 scripts/build_humansl_store.py --test-dir {args.test_dir}")
+                _fq, _i = [], 0
+                for n_ in fsizes:
+                    _fq.append([_hs_store.get(k_) for k_ in _k[_i:_i + n_]]); _i += n_
+                pr["humansl"] = question_log_posterior(_fq, args.humansl_mode)
             lo_ = np.log(np.clip(Pm, 1e-12, None))
             if seq_models:
                 bc = {}
