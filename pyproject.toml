@@ -20,6 +20,9 @@ dev = ["pytest>=7.0"]
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+aicup = ["*.cfg"]          # KataGo 分析引擎的設定（aicup.humansl）
+
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
