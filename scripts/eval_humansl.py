@@ -67,6 +67,9 @@ def main() -> int:
     ap.add_argument("--splits", type=int, default=5)
     ap.add_argument("--per-player", type=int, default=3, help="每位玩家每個 seed 出幾題")
     ap.add_argument("--mode", choices=["sum", "mean"], default="sum")
+    ap.add_argument("--players", type=int, default=0,
+                    help="只用棋池順序上前 N 位已完成的玩家（0 = 全部）。比較不同設定時要固定，"
+                         "否則棋池還在長，兩次評估的題目不同、基準也不同")
     ap.add_argument("--store", default="cache/humansl/games.jsonl")
     ap.add_argument("--json-out", default=None)
     args = ap.parse_args()
@@ -82,6 +85,9 @@ def main() -> int:
     for r in rows:
         by_player.setdefault(meta.at[r, "player_id"], []).append(int(r))
     done = {p: rs for p, rs in by_player.items() if all(keys[r] in store for r in rs)}
+    if args.players:
+        order = list(dict.fromkeys(meta.at[int(r), "player_id"] for r in rows))   # 棋池順序
+        done = {p: done[p] for p in [q for q in order if q in done][:args.players]}
     ranks = np.bincount([int(meta.at[rs[0], "rank_id"]) for rs in done.values()], minlength=10)
     print(f"棋池 {len(by_player)} 位玩家，HumanSL 已完成 {len(done)} 位；各等級 {ranks.tolist()}", flush=True)
     if len(done) < 50:
