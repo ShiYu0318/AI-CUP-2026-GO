@@ -64,6 +64,11 @@ if BOARD and not os.path.exists(BOARD):
 # 與序列模型的 AICUP_SEQ_EXTRA 同理：要問的是「**加進現有集成有沒有幫助**」，
 # 不是「單獨比上線那顆好不好」——不同架構／seed 的板面模型可能互補。
 BOARD_EXTRA = [p for p in os.environ.get("AICUP_BOARD_EXTRA", "").split(",") if p]
+# 以棋力為條件的走法模型（aicup.skillpolicy）。值是 checkpoint 路徑；空 = 不用。
+# 需要先跑 scripts/build_skill_store.py 算好驗證集每一盤的對數似然。
+SKILL = os.environ.get("AICUP_SKILL", "")
+SKILL_MOVES = int(os.environ.get("AICUP_SKILL_MOVES", "48"))
+SKILL_MODE = os.environ.get("AICUP_SKILL_MODE", "sum")
 QUESTION = os.environ.get("AICUP_QUESTION", "cache/rank_question_opp/models.pt")
 # ⚠️ 預設**就是上線中的三變體集成**，不是單一模型。
 # 實測 seq_full（+0.0053）與 seq_w192（+0.0061）各自都沒過 0.005 門檻，
@@ -187,6 +192,27 @@ class Components:
         groups = groups_from_meta(self._meta, q.game_rows, cache)
         return _log(board_question_posteriors(net, nsnap, groups, self.dev, tta=BOARD_TTA))
 
+    def skill(self, q):
+        """走法模型的題目層級 log 後驗：Σ 各盤（各棋力下的 log 機率），讀預先算好的存檔。"""
+        if "skill" not in self._loaded:
+            from aicup.oofcache import file_fingerprint
+            path = os.path.join(os.path.dirname(SKILL), f"val_loglik_m{SKILL_MOVES}.npz")
+            z = np.load(path)
+            if str(z["fingerprint"]) != file_fingerprint(SKILL):
+                raise RuntimeError(f"{path} 是用另一顆 checkpoint 算的；重跑 build_skill_store.py")
+            pos = np.full(int(z["rows"].max()) + 1, -1, dtype=np.int64)
+            pos[z["rows"]] = np.arange(len(z["rows"]))
+            self._loaded["skill"] = (pos, z["loglik"])
+        pos, ll = self._loaded["skill"]
+        out = []
+        for rows in q.game_rows:
+            g = ll[pos[np.asarray(rows)]]
+            L = g[:, 2:].sum(0)
+            if SKILL_MODE == "mean":
+                L = L / max(g[:, 0].sum(), 1.0)
+            out.append(L - (L.max() + np.log(np.exp(L - L.max()).sum())))
+        return np.array(out)
+
     def seq(self, q, ckpt=None, stores=None):
         """一個序列 checkpoint 的題目層級 log 後驗。
 
@@ -299,6 +325,8 @@ def main() -> int:
             comps.append((f"boardset_{os.path.basename(os.path.dirname(_bk))}"
                           + (f"_tta{BOARD_TTA}" if BOARD_TTA > 1 else ""),
                           (lambda qq, c=_bk: comp.board(qq, c)), [_bk]))
+        if SKILL:
+            comps.append((f"skill_m{SKILL_MOVES}_{SKILL_MODE}", comp.skill, [SKILL]))
         for _ck, _st in zip(SEQ, SEQS):
             _tag = f"seq_{os.path.basename(os.path.dirname(_ck))}"
             comps.append((_tag,

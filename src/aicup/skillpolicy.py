@@ -64,29 +64,43 @@ def position_samples(sgf: str, color, turns, targets):
 
 
 @torch.no_grad()
-def game_loglik(net, games, device, max_moves: int = 0, batch: int = 512) -> np.ndarray:
-    """多盤棋 [(sgf, color), ...] → (n_games, 2 + N_LEVELS)：[評分手數, 總手數, Σlog p 於各棋力]。
+def game_loglik(net, games, device, max_moves: int = 0, batch: int = 1024) -> np.ndarray:
+    """多盤棋 [(sgf, color), ...] → (n_games, 2 + N_LEVELS)：[評分手數, 我方總手數, Σlog p 於各棋力]。
 
     max_moves > 0 時均勻抽那麼多手（與 HumanSL 的 24 手對照用）；0 = 我方每一手。
+    局面**跨盤湊成批次**送 GPU——一盤只有約 100 個局面，逐盤送會讓 GPU 吃不飽。
     """
     net.eval()
-    out = []
-    for sgf, color in games:
+    out = np.zeros((len(games), 2 + N_LEVELS))
+    buf_x, buf_t, buf_g = [], [], []
+
+    def flush():
+        if not buf_x:
+            return
+        x = torch.from_numpy(planes_to_float(np.concatenate(buf_x))).to(device)
+        t = torch.from_numpy(np.concatenate(buf_t)).to(device)
+        lp = net(x)                                                   # (b, L, 361)
+        v = lp.gather(2, t[:, None, None].expand(-1, lp.shape[1], 1)).squeeze(2).cpu().numpy()
+        np.add.at(out[:, 2:], np.concatenate(buf_g), v)
+        buf_x.clear(); buf_t.clear(); buf_g.clear()
+
+    pending = 0
+    for gi, (sgf, color) in enumerate(games):
         t, tg = own_turns(sgf, color)
-        n_all = len(t)
+        out[gi, 1] = len(t)
         if max_moves and len(t) > max_moves:
             j = np.unique(np.linspace(0, len(t) - 1, max_moves).astype(int))
             t, tg = [t[i] for i in j], [tg[i] for i in j]
-        acc = np.zeros(N_LEVELS)
         planes, tgt = position_samples(sgf, color, t, tg) if t else (None, None)
-        if planes is not None:
-            for a in range(0, len(planes), batch):
-                x = torch.from_numpy(planes_to_float(planes[a:a + batch])).to(device)
-                lp = net(x)                                           # (b, L, 361)
-                idx = torch.from_numpy(tgt[a:a + batch]).to(device)
-                acc += lp.gather(2, idx[:, None, None].expand(-1, lp.shape[1], 1)).squeeze(2).sum(0).cpu().numpy()
-        out.append(np.concatenate([[len(t) if planes is not None else 0, n_all], acc]))
-    return np.array(out)
+        if planes is None:
+            continue
+        out[gi, 0] = len(t)
+        buf_x.append(planes); buf_t.append(tgt); buf_g.append(np.full(len(t), gi))
+        pending += len(t)
+        if pending >= batch:
+            flush(); pending = 0
+    flush()
+    return out
 
 
 def load_skill_policy(path: str, device):
