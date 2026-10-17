@@ -3,6 +3,9 @@
 eval_blend 的 `skill` 成分讀這個檔，所有 seed 共用——一位玩家的棋在不同 seed 的題目裡
 會一再出現，逐題重算是浪費。存檔記錄 checkpoint 的內容指紋，換模型時會拒絕使用舊檔。
 
+全量約 9 小時，所以**每個批次都存進度**（`*.partial.npz`，原子寫入），中斷後重跑會接續。
+⚠️ 第一版只在最後寫檔，2026-10-13 跑到 120,000 / 216,418 盤時程序被終止，5 小時的結果全部遺失。
+
     python3 scripts/build_skill_store.py --ckpt cache/skill_policy/best.pt --max-moves 48
 """
 from __future__ import annotations
@@ -38,20 +41,43 @@ def main() -> int:
     split = make_player_split(meta, val_frac=0.20, seed=42)
     rows = np.flatnonzero(split.mask(meta))
     cache = SgfCache()
+    fp = file_fingerprint(args.ckpt)
+    path = store_path(args.ckpt, args.max_moves)
+    partial = path.replace(".npz", ".partial.npz")
     out = np.zeros((len(rows), 12), dtype=np.float32)
-    t0 = time.time()
+    done = np.zeros(len(rows), dtype=bool)
+    if os.path.exists(partial):
+        z = np.load(partial)
+        if str(z["fingerprint"]) == fp and np.array_equal(z["rows"], rows):
+            out, done = z["loglik"], z["done"]
+            print(f"從進度檔接續：已完成 {done.sum():,} 盤", flush=True)
+        else:
+            print("進度檔屬於另一顆 checkpoint 或另一組棋，忽略", flush=True)
+
+    def save(target, **extra):
+        tmp = target + ".tmp"
+        with open(tmp, "wb") as fh:                    # 傳檔案物件，np.savez 才不會自己補副檔名
+            np.savez(fh, rows=rows, loglik=out, done=done, fingerprint=fp,
+                     max_moves=args.max_moves, **extra)
+        os.replace(tmp, target)
+
+    t0 = time.time(); n_new = 0
     for a in range(0, len(rows), args.chunk):
+        if done[a:a + args.chunk].all():
+            continue
         rr = rows[a:a + args.chunk]
         games = [(cache.get(int(meta.iat[r, meta.columns.get_loc("file_idx")]),
                             int(meta.iat[r, meta.columns.get_loc("row")])),
                   meta.iat[r, meta.columns.get_loc("color")]) for r in rr]
         out[a:a + len(rr)] = game_loglik(net, games, dev, max_moves=args.max_moves)
-        el = time.time() - t0; done = a + len(rr)
-        print(f"  {done:,}/{len(rows):,}  剩約 {(len(rows) - done) * el / done / 60:.0f} 分", flush=True)
-    path = store_path(args.ckpt, args.max_moves)
-    np.savez(path, rows=rows, loglik=out, fingerprint=file_fingerprint(args.ckpt),
-             max_moves=args.max_moves)
-    print(f"已寫出 {path}（{len(rows):,} 盤，{(time.time() - t0) / 60:.0f} 分）", flush=True)
+        done[a:a + len(rr)] = True
+        save(partial)
+        n_new += len(rr); el = time.time() - t0
+        print(f"  {done.sum():,}/{len(rows):,}  剩約 {(~done).sum() * el / n_new / 60:.0f} 分", flush=True)
+    save(path)
+    if os.path.exists(partial):
+        os.remove(partial)
+    print(f"已寫出 {path}（{len(rows):,} 盤，這次 {(time.time() - t0) / 60:.0f} 分）", flush=True)
     return 0
 
 
