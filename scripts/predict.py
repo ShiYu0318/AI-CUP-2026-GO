@@ -646,7 +646,8 @@ def main() -> int:
                          "需要事先算好：棋池（build_humansl_store.py --pool，校準用）與"
                          "測試集（build_humansl_store.py --test-dir）。任何一盤缺特徵就報錯，不會靜默降級")
     ap.add_argument("--humansl-store", default="cache/humansl/games.jsonl")
-    ap.add_argument("--humansl-mode", choices=["sum", "mean"], default="sum")
+    # mean（每手平均的對數似然）比 sum 好：+0.0032，7/8，t=2.94（800 位玩家，RESULTS.md §2.32）
+    ap.add_argument("--humansl-mode", choices=["sum", "mean"], default="mean")
     ap.add_argument("--humansl-per-player", type=int, default=6,
                     help="校準時棋池中每位玩家出幾題（800 位 x 6 ≈ 現行校準集的 4,776 題）")
     ap.add_argument("--board-tta", type=int, default=1,
