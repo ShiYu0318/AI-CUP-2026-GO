@@ -46,7 +46,7 @@ EOF
 git checkout <配方裡的 git_commit>
 # 1. 核對模型：配方的 models_sha256 應與現有檔案一致
 # 2. 照配方的 cmd 重跑（例如）
-.venv-repro/bin/python scripts/predict.py --humansl --test-dir official_tests --out-dir /tmp/re
+.venv-repro/bin/python scripts/predict.py --humansl --test-dir data/official_tests --out-dir /tmp/re
 shasum -a 256 /tmp/re/submission_rank.csv    # 應與配方的 output.sha256 相同
 ```
 

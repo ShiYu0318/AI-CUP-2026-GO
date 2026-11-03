@@ -45,7 +45,7 @@ pip install -e ".[torch,dev]"
 
 # 1. 下載官方訓練集（214 MB，解壓後約 1.3 GB，走官方 Releases）
 #    https://github.com/AILAB-NDHU/aicup2026-go-dataset/releases
-tar xf aicup2026_go_training.tar.xz        # 解出 training/
+mkdir -p data && tar xf aicup2026_go_training.tar.xz -C data   # 解出 data/training/
 
 # 2. 一次算好全部 100 萬局的手工特徵（10 核約 10 分鐘）
 python3 scripts/build_feature_store.py --nproc 10
@@ -54,8 +54,8 @@ python3 scripts/build_feature_store.py --nproc 10
 python3 scripts/run_baselines.py
 
 # 4. 產生提交檔（會先做完整格式驗證）
-python3 scripts/predict.py --check --test-dir official_tests   # 先檢查依賴齊不齊
-python3 scripts/predict.py --test-dir official_tests --out-dir cache/submissions
+python3 scripts/predict.py --check --test-dir data/official_tests   # 先檢查依賴齊不齊
+python3 scripts/predict.py --test-dir data/official_tests --out-dir cache/submissions
 
 # 測試
 python3 -m pytest tests/ -q

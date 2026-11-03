@@ -1,13 +1,10 @@
 /docs
-/training/
-/AICup-2026-Tutorial/
-/AIcupTutorial/
+/data/
+/references/
 .DS_Store
 __pycache__/
 *.pyc
 /cache/
-/mock_tests/
 /artifacts/
 /notebooks/
 /submissions/
-/official_tests/

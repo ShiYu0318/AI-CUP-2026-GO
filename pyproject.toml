@@ -28,5 +28,5 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-q"
 markers = [
-    "slow: 需要完整 training/ 資料集或較長時間的測試",
+    "slow: 需要完整 data/training/ 資料集或較長時間的測試",
 ]
