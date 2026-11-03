@@ -9,3 +9,5 @@ __pycache__/
 /mock_tests/
 /artifacts/
 /notebooks/
+/submissions/
+/official_tests/
