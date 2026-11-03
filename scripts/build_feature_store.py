@@ -29,6 +29,7 @@ import time
 import numpy as np
 import pandas as pd
 
+from aicup.data import TRAINING_DIR  # noqa: E402
 from aicup.data import training_files          # noqa: E402
 from aicup.features import (N_FEATURES, batch_features,          # noqa: E402
                             normalise_color)
@@ -59,7 +60,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--nproc", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--limit", type=int, default=None, help="每個等級只處理前 N 局（除錯用）")
-    ap.add_argument("--training-dir", default="training")
+    ap.add_argument("--training-dir", default=TRAINING_DIR)
     ap.add_argument("--opponent", action="store_true",
                     help="抽對手視角的特徵（執色反轉），存成 features_opp.npy")
     args = ap.parse_args()

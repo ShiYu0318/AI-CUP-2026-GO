@@ -8,13 +8,14 @@ from __future__ import annotations
 import argparse
 import time
 
+from aicup.data import TRAINING_DIR  # noqa: E402
 from aicup.data import training_files
 from aicup.sgfstore import BLOB, INDEX, build, is_valid
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--training-dir", default="training")
+    ap.add_argument("--training-dir", default=TRAINING_DIR)
     ap.add_argument("--force", action="store_true", help="即使現有的打包檔仍有效也重建")
     args = ap.parse_args()
     files = training_files(args.training_dir)

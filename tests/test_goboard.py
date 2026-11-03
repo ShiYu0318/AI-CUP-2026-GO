@@ -1,4 +1,6 @@
+import os
 """SGF 解析與棋盤邏輯的測試（提子、氣、座標系）。"""
+from aicup.data import TRAINING_DIR
 import numpy as np
 
 from aicup.goboard import (
@@ -97,7 +99,7 @@ def test_planes_bw_matches_board():
 def test_stone_count_invariant_on_real_game():
     """盤上子數 = 總手數 - 被提子數。這個不變量抓得到絕大多數提子邏輯錯誤。"""
     import pandas as pd
-    df = pd.read_csv("training/train_6D.csv", nrows=20)
+    df = pd.read_csv(os.path.join(TRAINING_DIR, "train_6D.csv"), nrows=20)
     for sgf in df.sgf_content:
         mv = parse_moves(sgf)
         b = replay(mv)

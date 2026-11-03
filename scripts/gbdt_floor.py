@@ -8,7 +8,8 @@
 它不依賴 `src/aicup/`，可獨立重跑；但評估協定是當時的版本，
 **絕對數字不能與現在的比較**。
 """
-import glob, re, sys, numpy as np, pandas as pd
+from aicup.data import TRAINING_DIR  # noqa: E402
+import glob, os, re, sys, numpy as np, pandas as pd
 from collections import defaultdict
 
 LEVELS = ['D','C','B','A','1D','2D','3D','4D','5D','6D']
@@ -82,7 +83,7 @@ def feats(sgf, color):
 
 rows, meta = [], []
 for lv in LEVELS:
-    d = pd.read_csv(f'training/train_{lv}.csv', usecols=['player_id','rank','color','sgf_content'])
+    d = pd.read_csv(os.path.join(TRAINING_DIR, f'train_{lv}.csv'), usecols=['player_id','rank','color','sgf_content'])
     d = d.sample(n=min(N_PER_RANK,len(d)), random_state=0)
     for pid, col, sgf in zip(d.player_id, d.color, d.sgf_content):
         f = feats(sgf, col)

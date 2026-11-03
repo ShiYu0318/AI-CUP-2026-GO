@@ -15,7 +15,8 @@
 ⚠️ 它的評估協定是**當時**的版本（題目局數分布 2026-09-20 才改成官方的
 5/10/15/20），所以**絕對數字不能與現在的比較**——價值在方法論的證據。
 """
-import glob, re, sys, numpy as np, pandas as pd
+from aicup.data import TRAINING_DIR  # noqa: E402
+import glob, os, re, sys, numpy as np, pandas as pd
 from collections import defaultdict
 
 MOVE_RE = re.compile(r';([BW])\[([a-s])([a-s])\]')
@@ -74,7 +75,7 @@ def game_vec(sgf, color):
 # ---- 蒐集候選玩家（每人至少 105 局）----
 need = N_GALLERY + 5
 pool = []
-for p in sorted(glob.glob('training/train_*.csv')):
+for p in sorted(glob.glob(os.path.join(TRAINING_DIR, 'train_*.csv'))):
     d = pd.read_csv(p, usecols=['player_id', 'color', 'sgf_content'])
     c = d.player_id.value_counts()
     ok = c[c >= need].index.tolist()

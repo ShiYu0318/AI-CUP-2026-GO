@@ -21,8 +21,14 @@ from . import LEVELS, RANK_TO_ID
 
 META_COLS = ["player_id", "game_id", "rank", "color"]
 
+# 資料路徑集中在這裡：程式與測試都引用這些常數，搬動資料夾時只改這一處。
+DATA_DIR = "data"
+TRAINING_DIR = os.path.join(DATA_DIR, "training")          # 官方訓練集（v1.0，見 repro/README.md）
+MOCK_TEST_DIR = os.path.join(DATA_DIR, "mock_tests")       # scripts/make_mock_testset.py 產生
+OFFICIAL_TEST_DIR = os.path.join(DATA_DIR, "official_tests")  # 官方測試集（2026-11-04 釋出）
 
-def training_files(training_dir: str = "training") -> list[str]:
+
+def training_files(training_dir: str = TRAINING_DIR) -> list[str]:
     files = sorted(glob.glob(os.path.join(training_dir, "train_*.csv")))
     if not files:
         raise FileNotFoundError(
@@ -37,7 +43,7 @@ def _rank_of(path: str) -> str:
     return os.path.basename(path).split("train_")[1][: -len(".csv")]
 
 
-def load_metadata(training_dir: str = "training", cache: str = "cache/metadata.npz",
+def load_metadata(training_dir: str = TRAINING_DIR, cache: str = "cache/metadata.npz",
                   rebuild: bool = False) -> pd.DataFrame:
     """載入全部 100 萬局的 metadata（不含 sgf_content），並快取。
 
@@ -65,7 +71,7 @@ def load_metadata(training_dir: str = "training", cache: str = "cache/metadata.n
     return meta
 
 
-def load_sgf(meta_subset: pd.DataFrame, training_dir: str = "training") -> pd.Series:
+def load_sgf(meta_subset: pd.DataFrame, training_dir: str = TRAINING_DIR) -> pd.Series:
     """依 metadata 子集取回對應的 sgf_content（每個檔案只讀一次）。
 
     回傳的 Series 索引與 meta_subset 對齊。

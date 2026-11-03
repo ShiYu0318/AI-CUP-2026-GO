@@ -6,7 +6,7 @@
     python3 scripts/build_humansl_store.py --pool --players-per-rank 80 --games 20
 
     # 官方測試檔（rank_prediction_test_{public,private}.csv 的全部棋）
-    python3 scripts/build_humansl_store.py --test-dir mock_tests
+    python3 scripts/build_humansl_store.py --test-dir data/mock_tests
 
 很慢（每盤約 2.5 秒，GPU 與其他程式共用時），所以：
 - 結果逐盤追加寫入，中斷後重跑會跳過已完成的盤；

@@ -4,13 +4,13 @@
 都可以現在就演練完畢。當天只要把路徑換掉即可，不必在有時間壓力時除錯。
 
 產出（全部使用 held-out 玩家，與訓練互斥）：
-    mock_tests/rank_prediction_test_public.csv      400 題
-    mock_tests/rank_prediction_test_private.csv     400 題
-    mock_tests/player_identification_test_public.csv
-    mock_tests/player_identification_test_private.csv
-    mock_tests/player_identification_candidates_public.csv    400 人 x 100 局
-    mock_tests/player_identification_candidates_private.csv
-    mock_tests/_answers.json                        正解（官方不會給，僅供離線評分）
+    data/mock_tests/rank_prediction_test_public.csv      400 題
+    data/mock_tests/rank_prediction_test_private.csv     400 題
+    data/mock_tests/player_identification_test_public.csv
+    data/mock_tests/player_identification_test_private.csv
+    data/mock_tests/player_identification_candidates_public.csv    400 人 x 100 局
+    data/mock_tests/player_identification_candidates_private.csv
+    data/mock_tests/_answers.json                        正解（官方不會給，僅供離線評分）
 """
 from __future__ import annotations
 
@@ -21,11 +21,12 @@ import os
 import numpy as np
 import pandas as pd
 
+from aicup.data import MOCK_TEST_DIR  # noqa: E402
 from aicup import ID_TO_RANK                                  # noqa: E402
 from aicup.data import load_metadata, make_player_split, load_sgf   # noqa: E402
 from aicup.benchmark import build_rank_questions, build_player_pool, MAX_GAMES  # noqa: E402
 
-OUT = "mock_tests"
+OUT = MOCK_TEST_DIR
 
 
 def _bulk_sgf(meta, rows) -> dict:

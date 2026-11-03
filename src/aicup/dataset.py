@@ -20,7 +20,7 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset, Sampler
 
-from .data import training_files
+from .data import TRAINING_DIR, training_files
 from .goboard import SIZE
 from .planes import game_planes, n_planes, planes_to_float
 
@@ -33,7 +33,7 @@ class SgfCache:
     實體記憶體。否則退回舊行為：每個 CSV 在第一次用到時整份載入（約 3 GB/程序）。
     """
 
-    def __init__(self, training_dir: str = "training", max_files: int = 10,
+    def __init__(self, training_dir: str = TRAINING_DIR, max_files: int = 10,
                  use_store: bool = True):
         self.files = training_files(training_dir)
         self.max_files = max_files
@@ -73,7 +73,7 @@ class GameDataset(Dataset):
     """單局資料集：回傳 (planes, rank_id, player_label)。"""
 
     def __init__(self, meta: pd.DataFrame, rows: np.ndarray, *,
-                 training_dir: str = "training", n_snapshots: int = 8,
+                 training_dir: str = TRAINING_DIR, n_snapshots: int = 8,
                  augment: bool = True, player_to_label: dict | None = None,
                  quality_store: np.ndarray | None = None,
                  quality_cols: list[int] | None = None):
@@ -148,7 +148,7 @@ class PKPlayerSampler(Sampler):
 class QuestionDataset(Dataset):
     """題目層級資料集：一題 = 同一位玩家的 5~20 局，對齊官方測試協定。"""
 
-    def __init__(self, meta: pd.DataFrame, questions, *, training_dir: str = "training",
+    def __init__(self, meta: pd.DataFrame, questions, *, training_dir: str = TRAINING_DIR,
                  n_snapshots: int = 4, max_games: int = 20, augment: bool = False):
         self.meta = meta
         self.questions = questions

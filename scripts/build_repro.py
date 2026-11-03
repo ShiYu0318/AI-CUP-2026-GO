@@ -1,7 +1,7 @@
 """產生 `repro/` 底下的重現性紀錄：環境、套件、模型雜湊、訓練參數、資料指紋、commit 對照。
 
     python3 scripts/build_repro.py                     # 全部重建
-    python3 scripts/build_repro.py --test-dir official_tests   # 資料指紋一併涵蓋官方測試檔
+    python3 scripts/build_repro.py --test-dir data/official_tests   # 資料指紋一併涵蓋官方測試檔
 
 產物（全部進 repo，給賽後的報告與論文用）：
 
@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+from aicup.data import TRAINING_DIR  # noqa: E402
 import argparse
 import ast
 import glob
@@ -129,7 +130,7 @@ def build_models() -> None:
 
 def build_data_manifest(test_dirs) -> None:
     files = {}
-    for p in sorted(glob.glob("training/train_*.csv")):
+    for p in sorted(glob.glob(os.path.join(TRAINING_DIR, "train_*.csv"))):
         files[p] = sha256(p)
     for d in test_dirs:
         for p in sorted(glob.glob(os.path.join(d, "*.csv"))):
@@ -162,7 +163,7 @@ def build_commit_map() -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--test-dir", action="append", default=[],
-                    help="一併記錄指紋的測試檔目錄（可重複），例如 official_tests、mock_tests")
+                    help="一併記錄指紋的測試檔目錄（可重複），例如 data/official_tests、data/mock_tests")
     args = ap.parse_args()
     os.makedirs(REPRO, exist_ok=True)
     write("python.txt", f"python {platform.python_version()} {platform.machine()} "

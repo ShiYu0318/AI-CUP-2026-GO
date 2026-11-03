@@ -1,7 +1,7 @@
 """提交紀錄：每份提交檔的出處、本地分數、以及上傳後的 Public LB 分數。
 
     python3 scripts/submissions.py add cache/submissions/submission_rank.csv --task rank --variant default \\
-        --cmd "python3 scripts/predict.py --test-dir official_tests"
+        --cmd "python3 scripts/predict.py --test-dir data/official_tests"
     python3 scripts/submissions.py lb R001 0.6123 --rank 12/80 --at "2026-11-04 11:42:10"
     python3 scripts/submissions.py note R001 "第一次上傳"
     python3 scripts/submissions.py show

@@ -1,4 +1,6 @@
+import os
 """手工特徵的測試：維度一致、無 NaN、對稱不變、顏色語意正確。"""
+from aicup.data import TRAINING_DIR
 import numpy as np
 import pandas as pd
 import pytest
@@ -11,7 +13,7 @@ from aicup.goboard import SIZE
 
 @pytest.fixture(scope="module")
 def sample():
-    d = pd.read_csv("training/train_4D.csv", nrows=60)
+    d = pd.read_csv(os.path.join(TRAINING_DIR, "train_4D.csv"), nrows=60)
     return d
 
 
@@ -179,7 +181,7 @@ def test_quality_features_differ_by_color(sample):
 def test_wasted_fill_is_zero_when_no_endgame_selffill():
     """一局只有開局手時，不可能出現「官子填自己的地」。"""
     import pandas as pd
-    d = pd.read_csv("training/train_1D.csv", nrows=3)
+    d = pd.read_csv(os.path.join(TRAINING_DIR, "train_1D.csv"), nrows=3)
     # 只取前 40 手，構造一個沒有官子的殘局
     sgf = d.sgf_content.iloc[0]
     moves = sgf.split(";")[:42]

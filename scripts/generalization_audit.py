@@ -17,7 +17,8 @@ E3（各等級辨識難度差異）見 RESULTS.md §1.3，E1/E4 見 §1.4。
 它不依賴 `src/aicup/`，可獨立重跑；但評估協定是當時的版本，
 **絕對數字不能與現在的比較**。
 """
-import glob, re, numpy as np, pandas as pd
+from aicup.data import TRAINING_DIR  # noqa: E402
+import glob, os, re, numpy as np, pandas as pd
 from collections import defaultdict
 
 MOVE_RE = re.compile(r';([BW])\[([a-s])([a-s])\]')
@@ -70,7 +71,7 @@ def parse(sgf, color):
 
 # ---- 蒐集：保留 game_id 順序 ----
 store = {}                                      # pid -> (rank, [ (gid, parts) ... ] 依 game_id 排序)
-for p in sorted(glob.glob('training/train_*.csv')):
+for p in sorted(glob.glob(os.path.join(TRAINING_DIR, 'train_*.csv'))):
     rk = p.split('train_')[1][:-4]
     d = pd.read_csv(p, usecols=['player_id','game_id','color','sgf_content'])
     cnt = d.player_id.value_counts()

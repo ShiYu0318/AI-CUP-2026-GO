@@ -6,7 +6,7 @@
 
 用法：
     python3 scripts/make_mock_testset.py          # 先產生模擬測試集
-    python3 scripts/predict.py --test-dir mock_tests
+    python3 scripts/predict.py --test-dir data/mock_tests
 
 正式使用：
     python3 scripts/predict.py --test-dir tests --out-dir .
@@ -23,6 +23,7 @@ import time
 import numpy as np
 import pandas as pd
 
+from aicup.data import MOCK_TEST_DIR  # noqa: E402
 from aicup import RANK_TO_ID, ID_TO_RANK                       # noqa: E402
 from aicup.data import load_metadata, make_player_split        # noqa: E402
 from aicup.features import batch_features, parallel_batch_features  # noqa: E402
@@ -550,7 +551,7 @@ def check_artifacts(args) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--test-dir", default="mock_tests")
+    ap.add_argument("--test-dir", default=MOCK_TEST_DIR)
     ap.add_argument("--out-dir", default="cache/submissions")
     ap.add_argument("--train-per-rank", type=int, default=0,
                     help="每個等級取幾局訓練棋力模型。0 = 用全部訓練玩家的棋局"

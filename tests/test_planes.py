@@ -1,4 +1,6 @@
+import os
 """盤面平面表徵的測試：層數、語意、對稱、涵蓋範圍。"""
+from aicup.data import TRAINING_DIR
 import numpy as np
 import pandas as pd
 import pytest
@@ -9,7 +11,7 @@ from aicup.goboard import SIZE, parse_moves, replay, BLACK, WHITE
 
 @pytest.fixture(scope="module")
 def sgf_color():
-    d = pd.read_csv("training/train_2D.csv", nrows=5)
+    d = pd.read_csv(os.path.join(TRAINING_DIR, "train_2D.csv"), nrows=5)
     return d.sgf_content.iloc[0], d.color.iloc[0]
 
 
@@ -55,8 +57,8 @@ def test_my_plane_matches_target_color(sgf_color):
 def test_color_plane_encodes_black_or_white():
     # ⚠️ 官方 CSV 依執色排序：前 50,000 列全是 B、後 50,000 列全是 W。
     # 用 nrows 取樣會拿到 100% 執黑而毫無警訊，必須跨越分界點取樣。
-    head = pd.read_csv("training/train_2D.csv", nrows=3)
-    tail = pd.read_csv("training/train_2D.csv", skiprows=range(1, 50_001), nrows=3)
+    head = pd.read_csv(os.path.join(TRAINING_DIR, "train_2D.csv"), nrows=3)
+    tail = pd.read_csv(os.path.join(TRAINING_DIR, "train_2D.csv"), skiprows=range(1, 50_001), nrows=3)
     assert set(head.color) == {"B"} and set(tail.color) == {"W"}
     black, white = head.iloc[0], tail.iloc[0]
     tb = game_planes(black.sgf_content, "B", n_snapshots=2)

@@ -1,8 +1,10 @@
+import os
 """驗證框架的測試：切分必須 player-disjoint，基準必須符合官方協定。
 
 這些測試保護的是整個專案最關鍵的假設。若切分洩漏或基準偏離官方協定，
 67 天沒有 leaderboard 的期間所有決策都會建立在錯的數字上。
 """
+from aicup.data import TRAINING_DIR
 import numpy as np
 import pytest
 
@@ -168,8 +170,8 @@ def test_csv_rows_are_sorted_by_color():
     任何抽樣都必須先 shuffle 或跨越第 50,000 列的分界。
     """
     import pandas as pd
-    head = pd.read_csv("training/train_3D.csv", nrows=5, usecols=["color"])
-    tail = pd.read_csv("training/train_3D.csv", skiprows=range(1, 50_001),
+    head = pd.read_csv(os.path.join(TRAINING_DIR, "train_3D.csv"), nrows=5, usecols=["color"])
+    tail = pd.read_csv(os.path.join(TRAINING_DIR, "train_3D.csv"), skiprows=range(1, 50_001),
                        nrows=5, usecols=["color"])
     assert set(head["color"]) == {"B"}
     assert set(tail["color"]) == {"W"}

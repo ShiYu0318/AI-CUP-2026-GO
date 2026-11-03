@@ -1,3 +1,4 @@
+import os
 """測試題目檔的解析——這是 11/04 當天最可能出錯的地方。
 
 官方題目檔有 sgf_1..sgf_20 共 20 欄，但只有前 num_games 欄有值，
@@ -7,6 +8,7 @@ import importlib.util
 import pathlib
 import sys
 
+from aicup.data import TRAINING_DIR
 import numpy as np
 import pandas as pd
 import pytest
@@ -20,7 +22,7 @@ _spec.loader.exec_module(predict)
 
 @pytest.fixture(scope="module")
 def real_sgfs():
-    d = pd.read_csv("training/train_5D.csv", nrows=6, usecols=["sgf_content", "color"])
+    d = pd.read_csv(os.path.join(TRAINING_DIR, "train_5D.csv"), nrows=6, usecols=["sgf_content", "color"])
     return d["sgf_content"].tolist(), d["color"].tolist()
 
 
