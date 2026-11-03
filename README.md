@@ -54,8 +54,8 @@ python3 scripts/build_feature_store.py --nproc 10
 python3 scripts/run_baselines.py
 
 # 4. 產生提交檔（會先做完整格式驗證）
-python3 scripts/predict.py --check --test-dir tests   # 先檢查依賴齊不齊
-python3 scripts/predict.py --test-dir tests --out-dir .
+python3 scripts/predict.py --check --test-dir official_tests   # 先檢查依賴齊不齊
+python3 scripts/predict.py --test-dir official_tests --out-dir cache/submissions
 
 # 測試
 python3 -m pytest tests/ -q
@@ -91,6 +91,8 @@ src/aicup/
 
 scripts/                          # 32 支，以下是主要的
 ├── build_sgf_store.py            SGF 打包檔（8 秒；讓多程序／多 worker 共用記憶體）
+├── submissions.py                提交紀錄（登記、Public LB、自動產生 SUBMISSIONS.md）
+├── build_repro.py                重現性紀錄（環境、模型與資料雜湊、訓練參數 → repro/）
 ├── build_feature_store.py        整局特徵庫
 ├── build_sequence_store.py       逐手序列庫（--shape / --quality / --opponent）
 ├── build_shape_features.py       逐手棋形聚合成整局統計
