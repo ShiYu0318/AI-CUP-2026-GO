@@ -1,0 +1,10 @@
+path	sha256	bytes	用途	來源
+cache/rank_mlp_opp_big/models.pt	c6bc2e6e7eab34184c03b2c521b824537a9167b17298d4f23d7e339cf3845a5f	56094594	競賽二 單局 MLP（5 seed，1178 維：我方＋對手手工特徵）	本專案訓練
+cache/rank_question_opp/models.pt	f11c502046a055cd6d0b7da93687ca2f722ba857fc6b04fe5bbd8d11b3294399	54379633	競賽二 題目層級 MLP（3 seed，聚合特徵）	本專案訓練
+cache/rank_seq_opp_full/models.pt	2e07915cce9193a839b5fdaa3e870ffdeda029fed5edba075eb8ae304725ab1a	5822225	競賽二 逐手序列 1D-CNN（我方＋對手 24 維/手，全訓練集）	本專案訓練
+cache/rank_seq_shape/models.pt	e44f83b3fcde577d81304040f9b7d1827fc5a79e46e30324decf8bb14465d59f	6006673	競賽二 逐手序列 1D-CNN（＋棋形，48 維/手）	本專案訓練
+cache/board/best.pt	4e63db9a14ceab8b00c7422ce10c2b1bc24d64998279125371b2228b9234c95e	20082575	競賽二 板面 CNN（34 層盤面快照、Set Transformer 集合池化，160k 步）	本專案訓練
+cache/feature_metric_h1024s12k/models.pt	5f1b871d6a4fc4aa412d4ff8ed2acbaa207db85b6f3bf69d8017df23891a155e	80537473	競賽一 度量學習（8 seed、隱藏層 1024、12000 步、ArcFace）	本專案訓練
+cache/skill/best.pt	af406e4b9fb9c89073c9e856e325091f601ce35304b491640f723057513a9ed3	5661415	（未上線）以棋力為條件的走法模型，RESULTS.md §2.33	本專案訓練
+cache/katago/b18c384nbt-humanv0.bin.gz	637746e44f0efe00ad1245a50aa9bbf0716efe364c43965ead97bd6835d84ab5	99066230	競賽二 KataGo HumanSL（10 種棋力 profile 的人類走法機率）	https://github.com/lightvector/KataGo/releases/download/v1.15.0/b18c384nbt-humanv0.bin.gz（KataGo network license）
+/opt/homebrew/Cellar/katago/1.18.2_2/share/katago/kata1-b18c384nbt-s9996604416-d4316597426.bin.gz	9d7a6afed8ff5b74894727e156f04f0cd36060a24824892008fbb6e0cba51f1d	97898094	競賽二 KataGo 主模型（HumanSL 查詢時一併載入、算目數損失）	Homebrew katago 1.18.2 附帶：kata1-b18c384nbt-s9996604416-d4316597426.bin.gz（KataGo network license）

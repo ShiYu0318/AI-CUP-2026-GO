@@ -1,0 +1,23 @@
+{
+ "all_files": 16,
+ "all_sha256": "bd8221585c2005873d6a3ecfe20a74a930a8cc02b6d24dce4af9e5c6933fc13c",
+ "files": {
+  "training/train_1D.csv": "879536c2b7f8fdeacf7d2ddd0b2ffab0f36b40862b7dcec48a4250cf8dea618b",
+  "training/train_2D.csv": "167eae9e4872c96be2bcbdddcee0ef37eff249dfe00bf8dce20c4ceb468628bc",
+  "training/train_3D.csv": "8954844760b0cd072aeb68ef1390e0c8a19055d900d31b554ab62fe3b25f455b",
+  "training/train_4D.csv": "96fccefca0d037aac2ba56f63d547ebbe4c321b0e60941457c508d1e25ff1867",
+  "training/train_5D.csv": "8b2bce946f10cd93f4be77469ac84b44f02f799467b717969e0ee350a10b7c85",
+  "training/train_6D.csv": "171a3083f1d49bf138cad71ae8b1122bdfb37ad6568f5d4c42321754e3969ee3",
+  "training/train_A.csv": "0915826dfeadb32fa6fc5f5a08b1ef90a5ed0e3cc7868452e8158c887e3ccbca",
+  "training/train_B.csv": "05ea3b278d4ca6043b9153c83fc62920f68bfd1aa2b424f05f28dfa4f9651c06",
+  "training/train_C.csv": "d66c5ade7775dd1596f1d7c1a6e0aa49d32557f5073188ba79e68063f6de69f7",
+  "training/train_D.csv": "2ac3b7684be1ead82ea3839243eb7510249e55457f536df910d99619ae0a6d22",
+  "mock_tests/player_identification_candidates_private.csv": "ff9e0964e92fbea5d7e1956d4085ceafee2604ef15571aef7e8f805f2658bc0e",
+  "mock_tests/player_identification_candidates_public.csv": "f83bb7db700264f1d94e21e3281fc7ab802f92ce3a52f07cd274e79558dd6ba6",
+  "mock_tests/player_identification_test_private.csv": "b17807d7f73f78be83a78ad048f7d86cd75f5c4a10225567a7ff74696f75dd84",
+  "mock_tests/player_identification_test_public.csv": "e3bc196bbacc66e049aaea35a07d51fac9a4e3d1daf4a59424d1b51e511fcb20",
+  "mock_tests/rank_prediction_test_private.csv": "0075aaae261c8689369b4be6569856c2936a917d8c21aaeb6d070cf902532d05",
+  "mock_tests/rank_prediction_test_public.csv": "16b127fa628e1d7df71e738197fd26c87d82d8d2a1ba004a4ca8f7f06cce736a"
+ },
+ "note": "訓練集為官方 v1.0（v1.1 只補上 HD[n]，刻意不換，見 docs/RUNBOOK.md）"
+}

@@ -1,0 +1,9 @@
+# 由 scripts/build_repro.py 掃描 src/、scripts/ 的 import 產生；版本為產生當下的安裝版本
+catboost==1.2.10
+lightgbm==4.7.0
+numpy==2.4.4
+pandas==2.3.1
+scipy==1.17.1
+scikit-learn==1.8.0
+torch==2.10.0
+xgboost==3.4.1

@@ -1,0 +1,19 @@
+{
+ "checkpoint": "cache/rank_seq_opp_full/models.pt",
+ "sha256": "2e07915cce9193a839b5fdaa3e870ffdeda029fed5edba075eb8ae304725ab1a",
+ "args": {
+  "seeds": 3,
+  "steps": 16000,
+  "width": 128,
+  "batch": 256,
+  "lr": 0.002,
+  "train_games": 0,
+  "sequences": "cache/sequences.npy",
+  "extra_sequences": [
+   "cache/sequences_opp.npy"
+  ],
+  "device": "auto",
+  "out": "cache/rank_seq_opp_full"
+ },
+ "score": 0.5594062304396077
+}

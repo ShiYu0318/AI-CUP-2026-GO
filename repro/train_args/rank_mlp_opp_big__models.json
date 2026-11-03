@@ -1,0 +1,18 @@
+{
+ "checkpoint": "cache/rank_mlp_opp_big/models.pt",
+ "sha256": "c6bc2e6e7eab34184c03b2c521b824537a9167b17298d4f23d7e339cf3845a5f",
+ "args": {
+  "seeds": 5,
+  "steps": 20000,
+  "hidden": 1024,
+  "batch": 2048,
+  "lr": 0.002,
+  "train_games": 0,
+  "corn_weight": 0.5,
+  "device": "auto",
+  "extra_features": [
+   "cache/features_opp.npy"
+  ],
+  "out": "cache/rank_mlp_opp_big"
+ }
+}

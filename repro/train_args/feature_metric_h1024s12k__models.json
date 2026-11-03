@@ -1,0 +1,24 @@
+{
+ "checkpoint": "cache/feature_metric_h1024s12k/models.pt",
+ "sha256": "5f1b871d6a4fc4aa412d4ff8ed2acbaa207db85b6f3bf69d8017df23891a155e",
+ "args": {
+  "seeds": 8,
+  "steps": 12000,
+  "embed_dim": 256,
+  "hidden": 1024,
+  "p": 48,
+  "k": 4,
+  "lr": 0.001,
+  "triplet_weight": 0.3,
+  "device": "cpu",
+  "stage2": "cache/stage2/model.pkl",
+  "eval_seeds": 3,
+  "keep_global_position": false,
+  "out": "cache/feature_metric_h1024s12k",
+  "extra_features": [
+   "cache/features_opp.npy",
+   "cache/features_shape.npy",
+   "cache/features_shape_opp.npy"
+  ]
+ }
+}

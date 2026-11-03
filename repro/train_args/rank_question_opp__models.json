@@ -1,0 +1,20 @@
+{
+ "checkpoint": "cache/rank_question_opp/models.pt",
+ "sha256": "f11c502046a055cd6d0b7da93687ca2f722ba857fc6b04fe5bbd8d11b3294399",
+ "args": {
+  "seeds": 3,
+  "steps": 6000,
+  "hidden": 768,
+  "batch": 512,
+  "lr": 0.0015,
+  "train_per_player": 4,
+  "game_model": "cache/rank_mlp_opp_big/models.pt",
+  "eval_question_seeds": 4,
+  "device": "auto",
+  "extra_features": [
+   "cache/features_opp.npy"
+  ],
+  "out": "cache/rank_question_opp"
+ },
+ "blend_weight": 0.2
+}

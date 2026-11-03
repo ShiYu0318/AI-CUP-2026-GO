@@ -1,0 +1,27 @@
+{
+ "checkpoint": "cache/skill/best.pt",
+ "sha256": "af406e4b9fb9c89073c9e856e325091f601ce35304b491640f723057513a9ed3",
+ "args": {
+  "width": 96,
+  "blocks": 8,
+  "games": 32,
+  "k": 8,
+  "steps": 60000,
+  "lr": 0.002,
+  "eval_every": 2000,
+  "workers": 4,
+  "max_hours": 30.0,
+  "resume": false,
+  "out": "cache/skill_policy",
+  "device": "auto"
+ },
+ "config": {
+  "in_channels": 34,
+  "width": 96,
+  "blocks": 8,
+  "n_levels": 10,
+  "gpb_every": 2
+ },
+ "step": 54000,
+ "score": 0.7561618851929889
+}
