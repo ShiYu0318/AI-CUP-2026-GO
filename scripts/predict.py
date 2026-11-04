@@ -693,6 +693,10 @@ def main() -> int:
                     help="競賽一：用候選池本身（每人 100 盤）現場訓練 400 類邏輯迴歸，取代模板餘弦。"
                          "官方 Q&A Q10 允許候選池用於校正。20 池逐池配對 +0.0024（9 勝 9 平 2 負），"
                          "最壞組成 0.9825 → 0.9904（RESULTS.md §2.35）")
+    ap.add_argument("--pool-l2", type=float, nargs="+", default=[1e-4],
+                    help="--pool-classifier 的 L2 強度；給多個值時各訓練一個分類器、分數取平均。"
+                         "Private 候選池自我驗證 10 次切分：1e-4 單一 1.7 錯 → 1e-5/1e-4/1e-3 平均 1.3 錯"
+                         "（RESULTS.md §2.35）")
     ap.add_argument("--pool-eps", type=float, default=0.05,
                     help="--pool-classifier 時的 Sinkhorn eps（分類器分數是 log 機率，尺度與餘弦不同）")
     ap.add_argument("--sinkhorn", type=float, default=0.002,
@@ -1170,10 +1174,11 @@ def main() -> int:
                 return np.concatenate([embed_features(m, scaler, A, mdev) for m in models], axis=1)
             Ec = embs(Xc[okc])
             yc = np.array([names.index(p_) for p_ in pid[okc]])
-            sim = pool_classifier_scores(Ec, yc, [embs(f) if len(f) else np.zeros((0, Ec.shape[1]))
-                                                  for f in feats], len(names), device=mdev)
+            _Eq = [embs(f) if len(f) else np.zeros((0, Ec.shape[1])) for f in feats]
+            sim = np.mean([pool_classifier_scores(Ec, yc, _Eq, len(names), device=mdev, wd=w_)
+                           for w_ in args.pool_l2], axis=0)
             eps = args.pool_eps
-            print(f"  候選池分類器：{len(names)} 類、{len(Ec):,} 盤訓練", flush=True)
+            print(f"  候選池分類器：{len(names)} 類、{len(Ec):,} 盤訓練、L2 {args.pool_l2}", flush=True)
         if args.stage2 and os.path.exists(args.stage2):
             from aicup.rerank_stage2 import rerank_scores
             with open(args.stage2, "rb") as fh:
