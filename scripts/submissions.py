@@ -55,6 +55,9 @@ METHOD = {
                                                  "每盤 24 手、每手平均對數似然）、板面 CNN")
                                   + "（HumanSL 棋池 800 位玩家、4,800 題校準；校準集重抽成**均勻**等級先驗）"),
     ("rank", "uniform_thresholds"): _RANK + "（stacker 以全驗證集 4,776 題擬合；**切點改在均勻等級先驗下校準**）",
+    ("player", "pool_classifier"): ("特徵：度量學習 MLP（h1024、12000 步、8 seed）的 embedding；"
+                                    "**用候選池本身（每人 100 盤）現場訓練 400 類邏輯迴歸**（L-BFGS），"
+                                    "每題各盤 log 機率平均 → Sinkhorn（eps 0.05）。官方 Q&A Q10 允許候選池用於校正"),
     ("player", "no_sinkhorn"): ("特徵：手工特徵 1164 維（我方＋對手＋棋形雙視角，去掉全域落子位置）｜"
                                 "度量學習：MLP（隱藏層 1024）＋Sub-center ArcFace＋batch-hard triplet，8 seed、12000 步｜"
                                 "玩家模板：L2→平均→L2｜指派：**不做全域指派**，每題各自取餘弦最近的 Top-5（消融）"),
@@ -67,6 +70,7 @@ METHOD_SHORT = {("rank", "default"): "生產集成（不含 HumanSL）",
                 ("rank", "humansl_uniform"): "＋HumanSL、均勻等級先驗",
                 ("rank", "uniform_thresholds"): "生產集成、切點用均勻先驗",
                 ("player", "default"): "度量學習＋Sinkhorn",
+                ("player", "pool_classifier"): "候選池分類器＋Sinkhorn",
                 ("player", "no_sinkhorn"): "度量學習、無 Sinkhorn（消融）"}
 #: 變體 → 本地分數（建立紀錄時的預設；可用 --cv / --e2e 覆寫）。協定寫在 cv_source。
 LOCAL = {
@@ -75,6 +79,7 @@ LOCAL = {
     ("player", "default"): ("0.9901", "8 評估 seed x 5 種候選庫組成，取最壞組成（平均 0.9944）", "0.9934"),
     ("rank", "humansl_uniform"): ("", "未以 8 seed 量；先驗之間最壞情況差約 0.010（RESULTS.md §2.7）", ""),
     ("rank", "uniform_thresholds"): ("0.5970", "每級等量的模擬測試集（8 seed x 5 切分）；同條件下現行解碼 0.5908", ""),
+    ("player", "pool_classifier"): ("0.9969", "4 seed x 5 組成、20 池逐池配對（現行 0.9945）；模擬測試集端到端 0.9992（現行 0.9934）", ""),
     ("player", "no_sinkhorn"): ("", "現行模型未量；舊模型上 Sinkhorn 值 +0.0400（15/15，RESULTS.md §1.1）", ""),
 }
 #: 變體 → 依賴的模型（與 repro/models.tsv 對照，記進配方）
