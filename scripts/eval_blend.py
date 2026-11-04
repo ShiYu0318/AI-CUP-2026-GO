@@ -69,6 +69,9 @@ BOARD_EXTRA = [p for p in os.environ.get("AICUP_BOARD_EXTRA", "").split(",") if 
 SKILL = os.environ.get("AICUP_SKILL", "")
 SKILL_MOVES = int(os.environ.get("AICUP_SKILL_MOVES", "48"))
 SKILL_MODE = os.environ.get("AICUP_SKILL_MODE", "sum")
+# 落子時間盤面模型（aicup.timeplanes）。值是 checkpoint 路徑；空 = 不用。
+# 需要先跑 scripts/build_timeplanes_store.py。
+TIMEPLANES = os.environ.get("AICUP_TIMEPLANES", "")
 QUESTION = os.environ.get("AICUP_QUESTION", "cache/rank_question_opp/models.pt")
 # ⚠️ 預設**就是上線中的三變體集成**，不是單一模型。
 # 實測 seq_full（+0.0053）與 seq_w192（+0.0061）各自都沒過 0.005 門檻，
@@ -213,6 +216,24 @@ class Components:
             out.append(L - (L.max() + np.log(np.exp(L - L.max()).sum())))
         return np.array(out)
 
+    def timeplanes(self, q):
+        """落子時間盤面模型的題目層級 log 後驗：各盤 log 機率的平均。"""
+        if "timeplanes" not in self._loaded:
+            from aicup.oofcache import file_fingerprint
+            path = os.path.splitext(TIMEPLANES)[0] + "_val.npz"
+            z = np.load(path)
+            if str(z["fingerprint"]) != file_fingerprint(TIMEPLANES):
+                raise RuntimeError(f"{path} 是用另一顆 checkpoint 算的；重跑 build_timeplanes_store.py")
+            pos = np.full(int(z["rows"].max()) + 1, -1, dtype=np.int64)
+            pos[z["rows"]] = np.arange(len(z["rows"]))
+            self._loaded["timeplanes"] = (pos, np.log(np.clip(z["proba"], 1e-9, None)))
+        pos, lp = self._loaded["timeplanes"]
+        out = []
+        for rows in q.game_rows:
+            L = lp[pos[np.asarray(rows)]].mean(0)
+            out.append(L - (L.max() + np.log(np.exp(L - L.max()).sum())))
+        return np.array(out)
+
     def seq(self, q, ckpt=None, stores=None):
         """一個序列 checkpoint 的題目層級 log 後驗。
 
@@ -327,6 +348,8 @@ def main() -> int:
                           (lambda qq, c=_bk: comp.board(qq, c)), [_bk]))
         if SKILL:
             comps.append((f"skill_m{SKILL_MOVES}_{SKILL_MODE}", comp.skill, [SKILL]))
+        if TIMEPLANES:
+            comps.append(("timeplanes", comp.timeplanes, [TIMEPLANES]))
         for _ck, _st in zip(SEQ, SEQS):
             _tag = f"seq_{os.path.basename(os.path.dirname(_ck))}"
             comps.append((_tag,
