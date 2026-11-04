@@ -39,6 +39,17 @@
 
 ## 快速開始
 
+> 📦 **資料集不在這個 repo 裡**（`data/` 已列入 `.gitignore`）。訓練集與測試集都請自行從
+> [AIdea 競賽頁面](https://www.aicup.tw/ai-cup-2026-competition)下載（訓練集也可走官方
+> [GitHub Releases](https://github.com/AILAB-NDHU/aicup2026-go-dataset/releases)），放成下面的結構：
+>
+> ```
+> data/
+> ├── training/        train_D.csv … train_6D.csv（官方訓練集）
+> ├── tests_rank/      rank_prediction_test_{public,private}.csv（棋力預測測試集）
+> └── tests_player/    player_identification_{test,candidates}_{public,private}.csv（玩家辨識測試集）
+> ```
+
 ```bash
 # 0. 安裝（editable，之後 `import aicup` 從任何目錄都能用）
 pip install -e ".[torch,dev]"
@@ -54,8 +65,8 @@ python3 scripts/build_feature_store.py --nproc 10
 python3 scripts/run_baselines.py
 
 # 4. 產生提交檔（會先做完整格式驗證）
-python3 scripts/predict.py --check --test-dir data/official_tests   # 先檢查依賴齊不齊
-python3 scripts/predict.py --test-dir data/official_tests --out-dir cache/submissions
+python3 scripts/predict.py --check --test-dir data   # 先檢查依賴齊不齊（會找 data/tests_rank、data/tests_player）
+python3 scripts/predict.py --test-dir data --out-dir cache/submissions
 
 # 測試
 python3 -m pytest tests/ -q

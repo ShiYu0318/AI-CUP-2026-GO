@@ -1,6 +1,6 @@
 {
- "all_files": 16,
- "all_sha256": "e663948a8f5eab93357ca987fa8337624fd263731fa10e8f7b9c4916604126f6",
+ "all_files": 24,
+ "all_sha256": "62137c0b032b66b2a586200511b972902a883bea813faecc372a4463270207d2",
  "files": {
   "data/training/train_1D.csv": "879536c2b7f8fdeacf7d2ddd0b2ffab0f36b40862b7dcec48a4250cf8dea618b",
   "data/training/train_2D.csv": "167eae9e4872c96be2bcbdddcee0ef37eff249dfe00bf8dce20c4ceb468628bc",
@@ -12,6 +12,14 @@
   "data/training/train_B.csv": "05ea3b278d4ca6043b9153c83fc62920f68bfd1aa2b424f05f28dfa4f9651c06",
   "data/training/train_C.csv": "d66c5ade7775dd1596f1d7c1a6e0aa49d32557f5073188ba79e68063f6de69f7",
   "data/training/train_D.csv": "2ac3b7684be1ead82ea3839243eb7510249e55457f536df910d99619ae0a6d22",
+  "data/tests_player/player_identification_candidates_private.csv": "db2cfe33be9c1e36355fac5664b758909ef80bce1be257e55bae056fba40d963",
+  "data/tests_player/player_identification_candidates_public.csv": "e662242cb0f0b2be2009c129abd291c9c852af7fae25d8f1e1c00208785ee24d",
+  "data/tests_player/player_identification_test_private.csv": "eedd2630731070633dfa264897ac739aec03879f90ac57149bba033d9bd53dee",
+  "data/tests_player/player_identification_test_public.csv": "fbf6f14de57bc37bbec6e3d732143a2561887d37b1f36271223ad1a14810ac74",
+  "data/tests_player/sample_submission_player.csv": "27dee3b9d447d62d03f136cd18d30953f3cb8821aeba399544e9d4eb782b355c",
+  "data/tests_rank/rank_prediction_test_private.csv": "d59865e24fe2f5ad742db68108a7f59c2e41138f18c4dc2eea1aa364f3e73c73",
+  "data/tests_rank/rank_prediction_test_public.csv": "4691803a8306ccd65d93a90bd6d7ba767d57abe96c0660b262f1a2b756b84fef",
+  "data/tests_rank/sample_submission_rank.csv": "aa5016dbc04d7c64860e1b8727d2c2fa0b19a28a481fd3c674f82ed36f68ed16",
   "data/mock_tests/player_identification_candidates_private.csv": "ff9e0964e92fbea5d7e1956d4085ceafee2604ef15571aef7e8f805f2658bc0e",
   "data/mock_tests/player_identification_candidates_public.csv": "f83bb7db700264f1d94e21e3281fc7ab802f92ce3a52f07cd274e79558dd6ba6",
   "data/mock_tests/player_identification_test_private.csv": "b17807d7f73f78be83a78ad048f7d86cd75f5c4a10225567a7ff74696f75dd84",
