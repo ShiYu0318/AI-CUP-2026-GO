@@ -70,3 +70,38 @@ def game_proba(net, games, device, batch: int = 512) -> np.ndarray:
         x = torch.from_numpy(np.stack([time_planes(s, c) for s, c in games[a:a + batch]])).to(device)
         out.append(torch.softmax(net(x), -1).cpu().numpy())
     return np.concatenate(out) if out else np.zeros((0, 10), np.float32)
+
+
+def question_log_posterior(game_proba_per_q) -> np.ndarray:
+    """每題各盤機率 → 題目層級 log 後驗：各盤 log 機率平均後再正規化（與 eval_blend 相同）。"""
+    out = []
+    for P in game_proba_per_q:
+        if len(P) == 0:
+            out.append(np.full(10, -np.log(10.0)))
+            continue
+        L = np.log(np.clip(np.asarray(P), 1e-9, None)).mean(0)
+        m = L.max()
+        out.append(L - (m + np.log(np.exp(L - m).sum())))
+    return np.array(out)
+
+
+def rows_proba(net, device, meta, rows, sgf_cache, store_path: str | None = None) -> dict:
+    """meta 列號 → 10 級機率。驗證集存檔有的直接讀，沒有的從 SGF 現算。"""
+    import os
+    out = {}
+    rows = np.unique(np.asarray(rows, dtype=np.int64))
+    if store_path and os.path.exists(store_path):
+        z = np.load(store_path)
+        srows, sproba = z["rows"], z["proba"]          # 只讀一次：npz 每次取鍵都會重新解壓整個陣列
+        pos = {int(r): i for i, r in enumerate(srows)}
+        hit = [r for r in rows if int(r) in pos]
+        for r in hit:
+            out[int(r)] = sproba[pos[int(r)]]
+        rows = np.array([r for r in rows if int(r) not in pos], dtype=np.int64)
+    if len(rows):
+        fi, ri, co = (meta.columns.get_loc(c) for c in ("file_idx", "row", "color"))
+        games = [(sgf_cache.get(int(meta.iat[r, fi]), int(meta.iat[r, ri])), meta.iat[r, co]) for r in rows]
+        P = game_proba(net, games, device)
+        for r, p in zip(rows, P):
+            out[int(r)] = p
+    return out

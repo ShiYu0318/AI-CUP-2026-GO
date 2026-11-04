@@ -646,6 +646,10 @@ def main() -> int:
     ap.add_argument("--board-extra", nargs="*", default=[],
                     help="額外的板面 CNN checkpoint，各自成為一個 stacker 成分"
                          "（成分名 board_<目錄名>）。預設不用")
+    ap.add_argument("--timeplanes", default="",
+                    help="競賽二：加入落子時間盤面模型（aicup.timeplanes）的 checkpoint 當 stacker 成分。"
+                         "校準題讀 scripts/build_timeplanes_store.py 產生的驗證集存檔，缺的盤從 SGF 現算。"
+                         "第 14k 步的 checkpoint 8 seed 配對 +0.0025（6/8 勝，RESULTS.md §2.36）")
     ap.add_argument("--humansl", action="store_true",
                     help="加入 KataGo HumanSL 成分（10 種棋力下每一手的走法機率）。"
                          "中期評估 +0.03（4/4，t=5.6，RESULTS.md §2.32）。"
@@ -868,6 +872,16 @@ def main() -> int:
             from aicup.dataset import SgfCache
             _bcache_sgf = SgfCache()
 
+        _tp_net = _tp_dev = None
+        if args.timeplanes:
+            from aicup.timeplanes import load_timeplanes as _ltp
+            from aicup.rank_nets import pick_device as _pdv
+            from aicup.dataset import SgfCache as _SC2
+            _tp_dev = _pdv("auto")
+            _tp_net = _ltp(args.timeplanes, _tp_dev)
+            _tp_sgf = _SC2()
+            print(f"  ＋落子時間盤面模型 {args.timeplanes}", flush=True)
+
         def _calib_parts(game_rows, tag="q"):
             """對一組題目算出所有 stacker 成分的 log 後驗，外加固定權重路徑的 _lo。
 
@@ -904,6 +918,15 @@ def main() -> int:
                 parts["humansl"] = question_log_posterior(
                     [[_hs_store.get(_hs_keys[int(r)]) for r in rows_] for rows_ in game_rows],
                     args.humansl_mode)
+            if _tp_net is not None:
+                from aicup.oofcache import file_fingerprint as _ffp
+                from aicup.timeplanes import question_log_posterior as _tqlp, rows_proba as _trp
+                _sp = os.path.splitext(args.timeplanes)[0] + "_val.npz"
+                if os.path.exists(_sp) and str(np.load(_sp)["fingerprint"]) != _ffp(args.timeplanes):
+                    raise SystemExit(f"{_sp} 是用另一顆 checkpoint 算的；重跑 build_timeplanes_store.py")
+                _pp = _trp(_tp_net, _tp_dev, _meta, np.concatenate([np.asarray(r_) for r_ in game_rows]),
+                           _tp_sgf, _sp)
+                parts["timeplanes"] = _tqlp([[_pp[int(r_)] for r_ in rows_] for rows_ in game_rows])
             lo = np.log(np.clip(P, 1e-12, None))
             if seq_models:
                 # 每個變體用**自己的**序列庫。24 維的舊變體與 48 維的棋形變體
@@ -1041,6 +1064,13 @@ def main() -> int:
                 for n_ in fsizes:
                     _fq.append([_hs_store.get(k_) for k_ in _k[_i:_i + n_]]); _i += n_
                 pr["humansl"] = question_log_posterior(_fq, args.humansl_mode)
+            if _tp_net is not None:
+                from aicup.timeplanes import game_proba as _tgp, question_log_posterior as _tqlp
+                _Pt = _tgp(_tp_net, list(zip(fsgf, fcol)), _tp_dev)
+                _fq, _i = [], 0
+                for n_ in fsizes:
+                    _fq.append(_Pt[_i:_i + n_]); _i += n_
+                pr["timeplanes"] = _tqlp(_fq)
             lo_ = np.log(np.clip(Pm, 1e-12, None))
             if seq_models:
                 bc = {}
