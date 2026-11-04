@@ -623,6 +623,11 @@ def main() -> int:
                          "（預設，維持現況）。官方測試集是 400 位玩家各一題，"
                          "其等級分布未知；實測不同假設之間最壞情況差 0.010"
                          "（RESULTS.md §2.7）。11/04 公開測試集釋出後再定案")
+    ap.add_argument("--threshold-prior", choices=["same", "natural", "uniform", "p100"], default="same",
+                    help="**只有切點**改用這個先驗校準（stacker 仍用 --calib-prior 的校準集）。"
+                         "官方測試集看起來是每級 40 題：本地『每級等量』模擬下，現行解碼 0.5908 與 Public 0.5906 "
+                         "幾乎一致；只把切點改成均勻校準 +0.0061（78%%），連 stacker 一起重抽反而較差"
+                         "（RESULTS.md §2.35）。same = 與 --calib-prior 相同（舊行為）")
     ap.add_argument("--stacker", type=float, default=1.0,
                     help="學習式融合的正則化強度 C（0 = 關閉，退回固定權重）。"
                          "固定權重融合 0.5639 → stacker 0.5727"
@@ -952,7 +957,12 @@ def main() -> int:
         else:
             _T = fit_temperature(_lo[_ci], _q.true_rank_id[_ci])
             _ev = expected_level(apply_temperature(_lo, _T))
-        _th = optimise_thresholds(_ev[_ci], _q.true_rank_id[_ci])
+        _ti = _ci
+        if args.threshold_prior != "same":
+            _ti = _resample_to_prior(np.arange(len(_q.true_rank_id)), _q.true_rank_id,
+                                     _rank_prior(args.threshold_prior, _meta), np.random.default_rng(43))
+            print(f"  切點改用 {args.threshold_prior} 先驗校準（{len(_ti)} 題；stacker 不變）", flush=True)
+        _th = optimise_thresholds(_ev[_ti], _q.true_rank_id[_ti])
         calib = (_T, _th, stacker)
         print(f"  切點校準完成（{len(_q.true_rank_id)} 題）："
               f"{'T=%.2f, ' % _T if _T is not None else ''}"
