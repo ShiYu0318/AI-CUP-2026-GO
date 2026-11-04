@@ -685,6 +685,12 @@ def main() -> int:
                          "0.7~0.8 是平台（0.5629~0.5639），確切值不敏感。"
                          "⚠️ 權重比單局模型還高——序列模型單獨（0.5483）"
                          "已經比整條對手視角管線（0.5402）強")
+    ap.add_argument("--pool-classifier", action="store_true",
+                    help="競賽一：用候選池本身（每人 100 盤）現場訓練 400 類邏輯迴歸，取代模板餘弦。"
+                         "官方 Q&A Q10 允許候選池用於校正。20 池逐池配對 +0.0024（9 勝 9 平 2 負），"
+                         "最壞組成 0.9825 → 0.9904（RESULTS.md §2.35）")
+    ap.add_argument("--pool-eps", type=float, default=0.05,
+                    help="--pool-classifier 時的 Sinkhorn eps（分類器分數是 log 機率，尺度與餘弦不同）")
     ap.add_argument("--sinkhorn", type=float, default=0.002,
                     help="競賽一的全域指派強度（0 = 關閉）。"
                          "官方規格已確認**一一對應**："
@@ -1123,6 +1129,21 @@ def main() -> int:
         feats = _metric_question_features(df, _mstores)
         Q = np.stack([make_tpl(f) if len(f) else np.zeros(G.shape[1]) for f in feats])
         sim = Q @ G.T
+        eps = args.sinkhorn
+        if args.pool_classifier and metric is not None:
+            from aicup.rerank import pool_classifier_scores
+
+            def embs(A):
+                A = np.asarray(A)
+                if cols is not None:
+                    A = A[:, cols]
+                return np.concatenate([embed_features(m, scaler, A, mdev) for m in models], axis=1)
+            Ec = embs(Xc[okc])
+            yc = np.array([names.index(p_) for p_ in pid[okc]])
+            sim = pool_classifier_scores(Ec, yc, [embs(f) if len(f) else np.zeros((0, Ec.shape[1]))
+                                                  for f in feats], len(names), device=mdev)
+            eps = args.pool_eps
+            print(f"  候選池分類器：{len(names)} 類、{len(Ec):,} 盤訓練", flush=True)
         if args.stage2 and os.path.exists(args.stage2):
             from aicup.rerank_stage2 import rerank_scores
             with open(args.stage2, "rb") as fh:
@@ -1132,11 +1153,11 @@ def main() -> int:
             sim = rerank_scores(st["model"], sim, top_n=st["top_n"],
                                 query_sizes=qn, gallery_sizes=gn)
             print(f"  已套用 Stage-2 重排（Top-{st['top_n']} → Top-5）", flush=True)
-        if args.sinkhorn > 0:
+        if eps > 0:
             from aicup.rerank import sinkhorn_assignment, bijection_consistency
             before = bijection_consistency(sim)
-            sim = sinkhorn_assignment(sim, eps=args.sinkhorn)
-            print(f"  已套用 Sinkhorn 全域指派（eps={args.sinkhorn}）："
+            sim = sinkhorn_assignment(sim, eps=eps)
+            print(f"  已套用 Sinkhorn 全域指派（eps={eps}）："
                   f"top-1 相異率 {before:.3f} → {bijection_consistency(sim):.3f}",
                   flush=True)
             if before < 0.60:

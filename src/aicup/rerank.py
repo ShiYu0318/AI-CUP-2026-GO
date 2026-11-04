@@ -210,3 +210,37 @@ def bijection_consistency(sim: np.ndarray) -> float:
     """
     top1 = np.asarray(sim).argmax(axis=1)
     return len(np.unique(top1)) / len(top1)
+
+
+def pool_classifier_scores(gallery_emb: np.ndarray, gallery_label: np.ndarray, query_embs: list,
+                           n_classes: int, device="cpu", iters: int = 300, wd: float = 1e-4) -> np.ndarray:
+    """用候選池本身訓練 n_classes 類的多項式邏輯迴歸，回傳 (題數, 類別數) 的分數。
+
+    每位候選人的 100 盤就是現成的帶標籤訓練資料（官方 Q&A Q10：候選池可用於校正、正規化等用途）。
+    模板餘弦只用到每位候選人的「平均」，分類器還用到了他棋局分布的形狀與彼此的邊界。
+    每題的分數 = 該題各盤 log 機率的平均。接 `sinkhorn_assignment(eps≈0.05)`。
+
+    實測（4 seed x 5 種組成、20 池逐池配對）：模板餘弦＋Sinkhorn 0.9945 →
+    分類器＋Sinkhorn 0.05 **0.9969**（9 勝 9 平 2 負），最壞組成 0.9825 → 0.9904（RESULTS.md §2.35）。
+    """
+    import torch
+    X = torch.from_numpy(np.asarray(gallery_emb, dtype=np.float32)).to(device)
+    y = torch.from_numpy(np.asarray(gallery_label, dtype=np.int64)).to(device)
+    W = torch.zeros(X.shape[1], n_classes, device=device, requires_grad=True)
+    b = torch.zeros(n_classes, device=device, requires_grad=True)
+    opt = torch.optim.LBFGS([W, b], lr=1, max_iter=iters, history_size=20, line_search_fn="strong_wolfe")
+
+    def closure():
+        opt.zero_grad()
+        loss = torch.nn.functional.cross_entropy(X @ W + b, y) + wd * (W ** 2).sum()
+        loss.backward()
+        return loss
+    opt.step(closure)
+    with torch.no_grad():
+        out = []
+        for E in query_embs:
+            if len(E) == 0:
+                out.append(np.zeros(n_classes)); continue
+            q = torch.from_numpy(np.asarray(E, dtype=np.float32)).to(device)
+            out.append(torch.log_softmax(q @ W + b, -1).mean(0).cpu().numpy())
+    return np.stack(out)
