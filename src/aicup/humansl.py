@@ -32,8 +32,12 @@ import numpy as np
 from .goboard import BLACK, normalise_color, parse_moves
 
 # 我們的 10 個等級 → HumanSL profile。級位組（12k~10k、9k~7k、6k~4k、3k~1k）取中點。
-PROFILES = ("rank_11k", "rank_8k", "rank_5k", "rank_2k",
-            "rank_1d", "rank_2d", "rank_3d", "rank_4d", "rank_5d", "rank_6d")
+ALL_PROFILES = ("rank_11k", "rank_8k", "rank_5k", "rank_2k",
+                "rank_1d", "rank_2d", "rank_3d", "rank_4d", "rank_5d", "rank_6d")
+# AICUP_HUMANSL_PROFILES="1,3,5,7,9" 只用部分 profile（建存檔與推論必須一致；存檔會略過長度不符的行）。
+# 96 手探針：5 個（8k、2k、2d、4d、6d）單盤 Spearman 0.775，與全部 10 個的 0.768 相當，成本減半（RESULTS.md §2.37）。
+_sel = os.environ.get("AICUP_HUMANSL_PROFILES", "")
+PROFILES = tuple(ALL_PROFILES[int(i)] for i in _sel.split(",")) if _sel else ALL_PROFILES
 N_PROFILES = len(PROFILES)
 COLS = "ABCDEFGHJKLMNOPQRST"
 # 特徵欄位：每個 profile 的平均 log 機率、首選一致率；目數損失的 4 個統計量；兩個計數。
