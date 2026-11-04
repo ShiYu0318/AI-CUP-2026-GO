@@ -7,7 +7,7 @@
     python3 scripts/submissions.py show
 
 兩個子題分開上傳、分開計分，所以編號分開：**R**（棋力預測）與 **P**（玩家辨識）。
-檔名用短編號（`submissions/r001.csv`）：PV 競賽踩過 AIdea 有未公開的檔名規則，
+檔案分放 `submissions/rank/`、`submissions/player/`，檔名用短編號（`r001.csv`）：PV 競賽踩過 AIdea 有未公開的檔名規則，
 長檔名被拒收、改成短編號就被接受。
 
 為什麼要記
@@ -170,8 +170,9 @@ def next_id(rows, task):
 def add(args):
     rows = _rows()
     rid = next_id(rows, args.task)
-    os.makedirs(SUB_DIR, exist_ok=True)
-    dst = os.path.join(SUB_DIR, f"{rid.lower()}.csv")
+    sub = os.path.join(SUB_DIR, args.task)                # submissions/rank/、submissions/player/
+    os.makedirs(sub, exist_ok=True)
+    dst = os.path.join(sub, f"{rid.lower()}.csv")
     shutil.copyfile(args.file, dst)
     key = (args.task, args.variant)
     cv, cv_src, e2e = LOCAL.get(key, ("", "", ""))
