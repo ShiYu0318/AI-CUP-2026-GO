@@ -25,7 +25,7 @@ META_COLS = ["player_id", "game_id", "rank", "color"]
 DATA_DIR = "data"
 TRAINING_DIR = os.path.join(DATA_DIR, "training")          # 官方訓練集（v1.0，見 repro/README.md）
 MOCK_TEST_DIR = os.path.join(DATA_DIR, "mock_tests")       # scripts/make_mock_testset.py 產生
-OFFICIAL_TEST_DIR = os.path.join(DATA_DIR, "official_tests")  # 官方測試集（2026-11-04 釋出）
+OFFICIAL_TEST_DIR = DATA_DIR   # 官方測試集（2026-11-04）放在 data/tests_rank/ 與 data/tests_player/
 
 
 def training_files(training_dir: str = TRAINING_DIR) -> list[str]:

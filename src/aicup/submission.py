@@ -140,12 +140,21 @@ TEST_FILE_NAMES = {
 }
 
 
+#: 官方 2026-11-04 釋出時把兩個子題放在不同資料夾（tests_rank/、tests_player/），
+#: 所以除了 test_dir 本身，也到這兩個子資料夾找。
+TEST_SUBDIRS = ("", "tests_rank", "tests_player")
+
+
 def resolve_test_file(test_dir: str, kind: str, tag: str) -> str:
-    """kind ∈ {"rank", "player", "candidates"}，tag ∈ {"public", "private"}。"""
+    """kind ∈ {"rank", "player", "candidates"}，tag ∈ {"public", "private"}。
+
+    在 test_dir 與它的 tests_rank/、tests_player/ 子資料夾裡找已知的命名；
+    找到不只一份就報錯（不知道該用哪一份），都找不到就回傳標準名，讓 `--check` 照常報缺檔。
+    """
     import os
     names = [n.format(t=tag) for n in TEST_FILE_NAMES[kind]]
-    found = [n for n in names if os.path.exists(os.path.join(test_dir, n))]
+    found = [os.path.join(test_dir, d, n) for d in TEST_SUBDIRS for n in names
+             if os.path.exists(os.path.join(test_dir, d, n))]
     if len(found) > 1:
-        raise FileExistsError(
-            f"{test_dir} 裡同時有 {found}——不知道該用哪一份，請刪掉多餘的")
-    return os.path.join(test_dir, found[0] if found else names[0])
+        raise FileExistsError(f"同時找到 {found}——不知道該用哪一份，請刪掉多餘的")
+    return os.path.normpath(found[0]) if found else os.path.join(test_dir, names[0])

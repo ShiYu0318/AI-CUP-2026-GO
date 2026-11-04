@@ -35,3 +35,14 @@ def test_two_schemes_at_once_is_an_error(tmp_path):
     _touch(tmp_path, "rank_prediction_test_public.csv")
     with pytest.raises(FileExistsError):
         resolve_test_file(str(tmp_path), "rank", "public")
+
+
+def test_official_subfolders_are_found(tmp_path):
+    """官方把兩個子題分放在 tests_rank/、tests_player/。"""
+    (tmp_path / "tests_rank").mkdir(); (tmp_path / "tests_player").mkdir()
+    _touch(tmp_path / "tests_rank", "rank_prediction_test_public.csv")
+    _touch(tmp_path / "tests_player", "player_identification_candidates_public.csv")
+    d = str(tmp_path)
+    assert resolve_test_file(d, "rank", "public").endswith("tests_rank/rank_prediction_test_public.csv")
+    assert resolve_test_file(d, "candidates", "public").endswith(
+        "tests_player/player_identification_candidates_public.csv")

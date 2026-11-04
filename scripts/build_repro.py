@@ -1,7 +1,7 @@
 """產生 `repro/` 底下的重現性紀錄：環境、套件、模型雜湊、訓練參數、資料指紋、commit 對照。
 
     python3 scripts/build_repro.py                     # 全部重建
-    python3 scripts/build_repro.py --test-dir data/official_tests   # 資料指紋一併涵蓋官方測試檔
+    python3 scripts/build_repro.py --test-dir data   # 資料指紋一併涵蓋官方測試檔
 
 產物（全部進 repo，給賽後的報告與論文用）：
 
@@ -133,7 +133,7 @@ def build_data_manifest(test_dirs) -> None:
     for p in sorted(glob.glob(os.path.join(TRAINING_DIR, "train_*.csv"))):
         files[p] = sha256(p)
     for d in test_dirs:
-        for p in sorted(glob.glob(os.path.join(d, "*.csv"))):
+        for p in sorted(glob.glob(os.path.join(d, "*.csv")) + glob.glob(os.path.join(d, "tests_*", "*.csv"))):
             files[p] = sha256(p)
     whole = hashlib.sha256("".join(f"{k}:{v}\n" for k, v in files.items()).encode()).hexdigest()
     with open(os.path.join(REPRO, "data_manifest.json"), "w", encoding="utf-8") as fh:
@@ -163,7 +163,7 @@ def build_commit_map() -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--test-dir", action="append", default=[],
-                    help="一併記錄指紋的測試檔目錄（可重複），例如 data/official_tests、data/mock_tests")
+                    help="一併記錄指紋的測試檔目錄（可重複），例如 data（含 tests_rank/、tests_player/）、data/mock_tests")
     args = ap.parse_args()
     os.makedirs(REPRO, exist_ok=True)
     write("python.txt", f"python {platform.python_version()} {platform.machine()} "
