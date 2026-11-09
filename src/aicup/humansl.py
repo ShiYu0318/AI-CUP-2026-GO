@@ -60,6 +60,11 @@ def main_model_path() -> str:
     return hits[-1]
 
 
+def opponent_color(color) -> str:
+    """對手的執色。HumanSL 評對手的落子時用（RESULTS.md §2.38：對手是伺服器依等級配對的，訊號比我方還強）。"""
+    return "W" if normalise_color(color) == BLACK else "B"
+
+
 def game_key(sgf: str, color) -> str:
     """一盤棋（含執色）的穩定鍵。同一份 SGF 換執色是不同的一筆。"""
     c = "B" if normalise_color(color) == BLACK else "W"

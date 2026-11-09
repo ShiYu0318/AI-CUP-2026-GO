@@ -23,7 +23,7 @@ import pandas as pd
 
 from aicup.data import load_metadata, make_player_split
 from aicup.dataset import SgfCache
-from aicup.humansl import HumanSLEngine, HumanSLStore, game_key
+from aicup.humansl import HumanSLEngine, HumanSLStore, game_key, opponent_color
 from aicup.submission import resolve_test_file
 
 POOL_FILE = "cache/humansl/pool.npz"
@@ -72,6 +72,9 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=0, help="最多處理幾盤（0 = 全部；冒煙測試用）")
     ap.add_argument("--moves", type=int, default=24, help="每盤評分的我方手數")
     ap.add_argument("--store", default="cache/humansl/games.jsonl")
+    ap.add_argument("--opponent", action="store_true",
+                    help="評**對手**的落子（執色翻轉；鍵也用翻轉後的執色，可與我方共用同一個存檔）。"
+                         "與 --pool 合用時讀現有的棋池檔、不重建，確保與我方是同一批棋")
     args = ap.parse_args()
     if not (args.pool or args.test_dir):
         ap.error("請指定 --pool 或 --test-dir")
@@ -80,16 +83,21 @@ def main() -> int:
         os.makedirs(d or ".", exist_ok=True)
     store = HumanSLStore(args.store)
     items = []
+    side = opponent_color if args.opponent else (lambda c: c)
     if args.pool:
-        rows = build_pool(args.players_per_rank, args.games)
-        np.savez(POOL_FILE, rows=rows, players_per_rank=args.players_per_rank, games=args.games)
+        if args.opponent:
+            rows = np.load(POOL_FILE)["rows"]
+        else:
+            rows = build_pool(args.players_per_rank, args.games)
+            np.savez(POOL_FILE, rows=rows, players_per_rank=args.players_per_rank, games=args.games)
         meta, cache = load_metadata(), SgfCache()
         for i in rows:
             rec = meta.loc[i]
             sgf = cache.get(int(rec["file_idx"]), int(rec["row"]))
-            items.append((game_key(sgf, rec["color"]), sgf, rec["color"]))
+            c = side(rec["color"])
+            items.append((game_key(sgf, c), sgf, c))
     if args.test_dir:
-        items += [(game_key(s, c), s, c) for s, c in test_items(args.test_dir)]
+        items += [(game_key(s, side(c)), s, side(c)) for s, c in test_items(args.test_dir)]
     seen, todo = set(), []
     for it in items:
         if it[0] not in store and it[0] not in seen:
