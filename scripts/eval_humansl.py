@@ -23,7 +23,7 @@ import torch
 
 from aicup.data import load_metadata
 from aicup.dataset import SgfCache
-from aicup.humansl import (FEATURE_NAMES, HumanSLStore, pool_players, pool_questions,
+from aicup.humansl import (FEATURE_NAMES, PROFILES, HumanSLStore, pool_players, pool_questions,
                            question_log_posterior)
 from aicup.oofcache import OofCache
 from aicup.scoring import apply_thresholds, optimise_thresholds, rank_final_score
@@ -46,7 +46,7 @@ def _eval_blend():
 
 def hs_extra(feats_per_q) -> np.ndarray:
     """論文的另一半特徵：各盤平均的首選一致率（10 profile）與目數損失的 4 個統計量。"""
-    lo, hi = FEATURE_NAMES.index("top1_" + "rank_11k"), FEATURE_NAMES.index("n_used")
+    lo, hi = FEATURE_NAMES.index("top1_" + PROFILES[0]), FEATURE_NAMES.index("n_used")
     out = []
     for fs in feats_per_q:
         v = [f[lo:hi] for f in fs if f is not None and not np.isnan(f[lo:hi]).any()]
