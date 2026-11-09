@@ -650,6 +650,10 @@ def main() -> int:
                     help="競賽二：加入落子時間盤面模型（aicup.timeplanes）的 checkpoint 當 stacker 成分。"
                          "校準題讀 scripts/build_timeplanes_store.py 產生的驗證集存檔，缺的盤從 SGF 現算。"
                          "第 14k 步的 checkpoint 8 seed 配對 +0.0025（6/8 勝，RESULTS.md §2.36）")
+    ap.add_argument("--humansl-opponent", action="store_true",
+                    help="再加一個 HumanSL 成分：評**對手**的落子（humansl_opp）。對手是伺服器依等級配對的，"
+                         "探針上單盤 Spearman 0.787（我方 0.782）、玩家層級相加 0.883 → 0.924（RESULTS.md §2.38）。"
+                         "需要 build_humansl_store.py --opponent 算好棋池與測試集")
     ap.add_argument("--humansl", action="store_true",
                     help="加入 KataGo HumanSL 成分（10 種棋力下每一手的走法機率）。"
                          "中期評估 +0.03（4/4，t=5.6，RESULTS.md §2.32）。"
@@ -849,7 +853,9 @@ def main() -> int:
         _meta = load_metadata()
         _split = _mps(_meta, val_frac=0.20, seed=42)
         _q = _brq(_meta, _split, n_per_player=3, seed=0)
-        _hs_store = _hs_keys = None
+        _hs_store = _hs_keys = _hs_okeys = None
+        if args.humansl_opponent and not args.humansl:
+            raise SystemExit("--humansl-opponent 需要同時加 --humansl")
         if args.humansl:
             # HumanSL 每盤約 2.5 秒，不可能為驗證集的全部棋（約 20 萬盤）都算；
             # 校準題改從「已算完的固定棋池」出（RESULTS.md §2.32）。
@@ -859,6 +865,10 @@ def main() -> int:
                 raise SystemExit("--humansl 與跨子題增強不能同時使用：增強用的候選人棋不在 HumanSL 棋池裡")
             _hs_store = HumanSLStore(args.humansl_store)
             _hs_done, _hs_keys = pool_players(_meta, _hs_store, _SC())
+            _hs_okeys = None
+            if args.humansl_opponent:
+                _hs_done_o, _hs_okeys = pool_players(_meta, _hs_store, _SC(), opponent=True)
+                _hs_done = {p_: rs_ for p_, rs_ in _hs_done.items() if p_ in _hs_done_o}
             if len(_hs_done) < 200:
                 raise SystemExit(f"HumanSL 棋池只完成 {len(_hs_done)} 位玩家（至少要 200），"
                                  "先跑 scripts/build_humansl_store.py --pool")
@@ -922,6 +932,14 @@ def main() -> int:
                 parts["humansl"] = question_log_posterior(
                     [[_hs_store.get(_hs_keys[int(r)]) for r in rows_] for rows_ in game_rows],
                     args.humansl_mode)
+                if _hs_okeys is not None:
+                    _miss = [int(r) for rows_ in game_rows for r in rows_
+                             if _hs_okeys.get(int(r)) not in _hs_store]
+                    if _miss:
+                        raise SystemExit(f"校準題有 {len(_miss)} 盤沒有對手落子的 HumanSL 特徵")
+                    parts["humansl_opp"] = question_log_posterior(
+                        [[_hs_store.get(_hs_okeys[int(r)]) for r in rows_] for rows_ in game_rows],
+                        args.humansl_mode)
             if _tp_net is not None:
                 from aicup.oofcache import file_fingerprint as _ffp
                 from aicup.timeplanes import question_log_posterior as _tqlp, rows_proba as _trp
@@ -1068,6 +1086,18 @@ def main() -> int:
                 for n_ in fsizes:
                     _fq.append([_hs_store.get(k_) for k_ in _k[_i:_i + n_]]); _i += n_
                 pr["humansl"] = question_log_posterior(_fq, args.humansl_mode)
+                if args.humansl_opponent:
+                    from aicup.humansl import opponent_color
+                    _ko = [game_key(s_, opponent_color(c_)) for s_, c_ in zip(fsgf, fcol)]
+                    _miss = sum(k_ not in _hs_store for k_ in _ko)
+                    if _miss:
+                        raise SystemExit(
+                            f"測試集有 {_miss}/{len(_ko)} 盤沒有對手落子的 HumanSL 特徵。先跑："
+                            f"python3 scripts/build_humansl_store.py --test-dir {args.test_dir} --opponent")
+                    _fq, _i = [], 0
+                    for n_ in fsizes:
+                        _fq.append([_hs_store.get(k_) for k_ in _ko[_i:_i + n_]]); _i += n_
+                    pr["humansl_opp"] = question_log_posterior(_fq, args.humansl_mode)
             if _tp_net is not None:
                 from aicup.timeplanes import game_proba as _tgp, question_log_posterior as _tqlp
                 _Pt = _tgp(_tp_net, list(zip(fsgf, fcol)), _tp_dev)

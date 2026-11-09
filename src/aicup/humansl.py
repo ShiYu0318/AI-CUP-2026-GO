@@ -259,14 +259,16 @@ def question_log_posterior(feats_per_q, mode: str = "sum") -> np.ndarray:
 POOL_FILE = "cache/humansl/pool.npz"
 
 
-def pool_players(meta, store: "HumanSLStore", sgf_cache, pool_file: str = POOL_FILE) -> tuple:
+def pool_players(meta, store: "HumanSLStore", sgf_cache, pool_file: str = POOL_FILE,
+                 opponent: bool = False) -> tuple:
     """棋池中「全部盤數都已算完 HumanSL」的玩家 → 他們的 meta 列索引；外加每列的鍵。
 
     回傳 (done, keys)：done 依棋池順序排列（各等級輪流），keys 是 列索引 → 鍵。
     """
     rows = np.load(pool_file)["rows"]
+    side = opponent_color if opponent else (lambda c: c)
     keys = {int(r): game_key(sgf_cache.get(int(meta.at[r, "file_idx"]), int(meta.at[r, "row"])),
-                             meta.at[r, "color"]) for r in rows}
+                             side(meta.at[r, "color"])) for r in rows}
     by_player: dict = {}
     for r in rows:
         by_player.setdefault(meta.at[int(r), "player_id"], []).append(int(r))

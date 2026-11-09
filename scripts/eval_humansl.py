@@ -67,12 +67,18 @@ def main() -> int:
                     help="除了對數似然，再把首選一致率與目數損失當成 stacker 的額外特徵")
     ap.add_argument("--store", default="cache/humansl/games.jsonl")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--opponent", action="store_true",
+                    help="另外加入「對手落子」的 HumanSL 成分（humansl_opp），報告 生產／＋我方／＋我方＋對方 三者")
     args = ap.parse_args()
 
     eb = _eval_blend()
     meta = load_metadata()
     store = HumanSLStore(args.store)
     done, keys = pool_players(meta, store, SgfCache())
+    okeys = None
+    if args.opponent:
+        done_o, okeys = pool_players(meta, store, SgfCache(), opponent=True)
+        done = {p: rs for p, rs in done.items() if p in done_o}
     n_pool = len(np.load("cache/humansl/pool.npz")["rows"]) // 20
     if args.players:
         done = dict(list(done.items())[:args.players])          # 棋池順序（各等級輪流）
@@ -85,7 +91,7 @@ def main() -> int:
     dev = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     comp = eb.Components(dev)
     oof = OofCache()
-    res = {"base": [], "hs": []}
+    res = {"base": [], "hs": []} | ({"hs2": []} if args.opponent else {})
     acc = {k: {s: [] for s in SIZES} for k in res}
     for seed in range(args.seeds):
         q = pool_questions(meta, done, args.per_player, 7000 + seed, SIZES)
@@ -103,14 +109,19 @@ def main() -> int:
         fq = [[store.get(keys[int(r)]) for r in g] for g in gr]
         hs = question_log_posterior(fq, args.mode)
         ex = hs_extra(fq) if args.extra else None
+        hso = (question_log_posterior([[store.get(okeys[int(r)]) for r in g] for g in gr], args.mode)
+               if args.opponent else None)
         sizes = np.array([len(g) for g in gr], dtype=float)
         y = q.true_rank_id; up = np.array(sorted(set(pid)))
-        row = {"base": [], "hs": []}
+        row = {k: [] for k in res}
         for sp in range(args.splits):
             rr = np.random.default_rng(90000 + 31 * seed + sp); u = up.copy(); rr.shuffle(u)
             cs = set(u[:len(u) // 2].tolist()); inc = np.array([p in cs for p in q.player_id])
             cal, sco = np.flatnonzero(inc), np.flatnonzero(~inc)
-            for k, ps in (("base", parts), ("hs", {**parts, "humansl": hs})):
+            cfgs = [("base", parts), ("hs", {**parts, "humansl": hs})]
+            if hso is not None:
+                cfgs.append(("hs2", {**parts, "humansl": hs, "humansl_opp": hso}))
+            for k, ps in cfgs:
                 F = stack_features(ps, sizes)
                 if k == "hs" and ex is not None:
                     F = np.hstack([F, ex])
@@ -123,7 +134,8 @@ def main() -> int:
         for k in res:
             res[k].append(float(np.mean(row[k])))
         print(f"  seed {seed}  生產 {res['base'][-1]:.4f}  ＋HumanSL {res['hs'][-1]:.4f}"
-              f"  （{len(y)} 題）", flush=True)
+              + (f"  ＋對手 {res['hs2'][-1]:.4f}" if args.opponent else "")
+              + f"  （{len(y)} 題）", flush=True)
 
     a, b = np.array(res["base"]), np.array(res["hs"]); d = b - a
     se = d.std(ddof=1) / np.sqrt(len(d)) if len(d) > 1 else float("nan")
@@ -134,6 +146,11 @@ def main() -> int:
     print(f"  配對差            {d.mean():+.4f} ±{d.std(ddof=1):.4f}，{(d > 0).sum()}/{len(d)} 勝，t={d.mean() / se:.2f}")
     print("  完全猜中率：" + "　".join(f"{s} 盤 {np.mean(acc['base'][s]):.3f}→{np.mean(acc['hs'][s]):.3f}"
                                   for s in SIZES))
+    if args.opponent:
+        c = np.array(res["hs2"]); d2 = c - b; se2 = d2.std(ddof=1) / np.sqrt(len(d2))
+        print(f"  ＋我方＋對方      {c.mean():.4f}")
+        print(f"  對方的額外增益    {d2.mean():+.4f} ±{d2.std(ddof=1):.4f}，{(d2 > 0).sum()}/{len(d2)} 勝，t={d2.mean() / se2:.2f}")
+        print("  完全猜中率（＋對方）：" + "　".join(f"{s} 盤 {np.mean(acc['hs2'][s]):.3f}" for s in SIZES))
     if args.json_out:
         with open(args.json_out, "w") as fh:
             json.dump({"players": len(done), "mode": args.mode, "base": res["base"], "hs": res["hs"],
