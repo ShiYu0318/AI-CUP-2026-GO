@@ -69,7 +69,7 @@ def seq_embed_games(pr, seq, sgfs, colors, device) -> np.ndarray:
 
 
 def scores_v2(pr, metric, tag: str, test_dir: str, method: str, l2_wd: float = 1e-4,
-              seq=None) -> tuple:
+              seq=None, fuse_c: float = 0.4) -> tuple:
     """新增測試集一個切分 → (題號, 候選人名單, 分數矩陣)。
 
     seq：`load_seq_identity` 的輸出；給了就把序列 embedding 當第 9 段串在度量 embedding 後面
@@ -108,6 +108,20 @@ def scores_v2(pr, metric, tag: str, test_dir: str, method: str, l2_wd: float = 1
         G = np.stack([template(Ec[pid == n], D) for n in names])
         Q = np.stack([template(e, D) if len(e) else np.zeros(G.shape[1]) for e in Eq])
         S = Q @ G.T
+    elif method == "zfuse":
+        # RESULTS.md §2.40：z(序列模板) + c·z(度量分類器)，新增測試集模擬 0.5632（c=0.3）／0.5616（c=0.5）
+        # vs 分類器 度量 0.4354、模板 序列 0.5160。分類器只用度量的 8 段（序列 embedding 單獨餵分類器很差）。
+        if seq is None:
+            raise SystemExit("--method zfuse 需要 --seq-identity")
+        from aicup.rerank import pool_classifier_scores
+        dm = d_metric
+        idx = {n: i for i, n in enumerate(names)}
+        Gs = l2(np.stack([Ec[pid == n, dm:].mean(0) for n in names]))
+        Qs = l2(np.stack([e[:, dm:].mean(0) if len(e) else np.zeros(Ec.shape[1] - dm) for e in Eq]))
+        Bm = pool_classifier_scores(Ec[:, :dm], np.array([idx[p] for p in pid]), [e[:, :dm] for e in Eq],
+                                    len(names), device=dev, wd=l2_wd)
+        z = lambda M: (M - M.mean(1, keepdims=True)) / (M.std(1, keepdims=True) + 1e-9)
+        S = z(Qs @ Gs.T) + fuse_c * z(Bm)
     elif method == "classifier":
         from aicup.rerank import pool_classifier_scores
         idx = {n: i for i, n in enumerate(names)}
@@ -149,7 +163,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--test-dir", default="data/v2/tests")
     ap.add_argument("--old", required=True, help="原測試集（pub_/priv_）沿用的提交檔，例如 submissions/player/p003.csv")
-    ap.add_argument("--method", choices=["template", "classifier"], default="template")
+    ap.add_argument("--method", choices=["template", "classifier", "zfuse"], default="template")
+    ap.add_argument("--fuse-c", type=float, default=0.4, help="zfuse 中度量分類器的權重（模擬 0.3~0.5 都在 0.562 附近）")
     ap.add_argument("--l2", type=float, default=1e-4, help="classifier 的 L2 強度")
     ap.add_argument("--metric", default="cache/feature_metric_h1024s12k/models.pt")
     ap.add_argument("--seq-identity", default="", help="train_seq_identity.py 的 checkpoint（例如 cache/seq_identity/best.pt）")
@@ -163,7 +178,7 @@ def main() -> int:
     parts = [old]
     seq = load_seq_identity(args.seq_identity, metric[2]) if args.seq_identity else None
     for tag in ("public", "private"):
-        parts.append(top5(*scores_v2(pr, metric, tag, args.test_dir, args.method, args.l2, seq)))
+        parts.append(top5(*scores_v2(pr, metric, tag, args.test_dir, args.method, args.l2, seq, args.fuse_c)))
     sub = pd.concat(parts, ignore_index=True)
     validate(sub, args.test_dir)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
