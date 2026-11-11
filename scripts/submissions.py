@@ -64,6 +64,8 @@ METHOD = {
                                 "新增測試集 pub2_/priv2_（候選 600 人 x 10 盤、題目 1/2/3/5 盤、非一對一）"
                                 "用度量學習 MLP 模板餘弦、**不做 Sinkhorn**"),
     ("player", "v2_classifier"): ("**更新版測試集**：舊題沿用 P003；新題用候選池分類器（600 類邏輯迴歸，每人 10 盤，L2 1e-4），不做 Sinkhorn"),
+    ("player", "v2_seq"): ("**更新版測試集**：舊題沿用 P003；新題用候選池分類器（L2 1e-4），"
+                           "embedding ＝度量學習 MLP 8 段＋**逐手序列身分模型**（1D-CNN＋ArcFace）第 9 段"),
     ("player", "no_sinkhorn"): ("特徵：手工特徵 1164 維（我方＋對手＋棋形雙視角，去掉全域落子位置）｜"
                                 "度量學習：MLP（隱藏層 1024）＋Sub-center ArcFace＋batch-hard triplet，8 seed、12000 步｜"
                                 "玩家模板：L2→平均→L2｜指派：**不做全域指派**，每題各自取餘弦最近的 Top-5（消融）"),
@@ -81,6 +83,7 @@ METHOD_SHORT = {("rank", "default"): "生產集成（不含 HumanSL）",
                 ("player", "pool_classifier"): "候選池分類器＋Sinkhorn",
                 ("player", "v2_template"): "更新版：舊題沿用 P003、新題模板餘弦",
                 ("player", "v2_classifier"): "更新版：舊題沿用 P003、新題候選池分類器",
+                ("player", "v2_seq"): "更新版：新題分類器＋序列身分 embedding",
                 ("player", "no_sinkhorn"): "度量學習、無 Sinkhorn（消融）"}
 #: 變體 → 本地分數（建立紀錄時的預設；可用 --cv / --e2e 覆寫）。協定寫在 cv_source。
 LOCAL = {
@@ -93,6 +96,7 @@ LOCAL = {
     ("rank", "uniform_thresholds"): ("0.5970", "每級等量的模擬測試集（8 seed x 5 切分）；同條件下現行解碼 0.5908", ""),
     ("player", "pool_classifier"): ("0.9969", "4 seed x 5 組成、20 池逐池配對（現行 0.9945）；模擬測試集端到端 0.9992（現行 0.9934）", ""),
     ("player", "v2_template"): ("0.4145", "新增測試集本地模擬（600 候選 x 10 盤、400 題、4 seed）；只計新題", ""),
+    ("player", "v2_seq"): ("0.4511", "新增測試集本地模擬 4 seed（序列模型第 3,000 步；分類器度量 0.4354）；只計新題", ""),
     ("player", "v2_classifier"): ("0.4354", "新增測試集本地模擬（同上，4/4 勝模板）；只計新題", ""),
     ("player", "no_sinkhorn"): ("", "現行模型未量；舊模型上 Sinkhorn 值 +0.0400（15/15，RESULTS.md §1.1）", ""),
 }

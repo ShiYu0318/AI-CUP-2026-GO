@@ -43,8 +43,38 @@ def template(E: np.ndarray, n_models: int) -> np.ndarray:
     return l2(np.concatenate([l2(E[:, k * d:(k + 1) * d].mean(0)) for k in range(n_models)]))
 
 
-def scores_v2(pr, metric, tag: str, test_dir: str, method: str, l2_wd: float = 1e-4) -> tuple:
-    """新增測試集一個切分 → (題號, 候選人名單, 分數矩陣)。"""
+def load_seq_identity(path: str, device):
+    """train_seq_identity.py 的 checkpoint → (網路, 視角)。視角由訓練時的存檔名稱推出（predict.SEQ_VIEWS）。"""
+    import torch
+    sys.path.insert(0, HERE)
+    from train_seq_identity import SeqIdentityNet
+    ck = torch.load(path, map_location="cpu", weights_only=False)
+    net = SeqIdentityNet(ck["n_feat"], ck["width"], ck["dim"])
+    net.load_state_dict(ck["model"])
+    return net.to(device).eval(), ck
+
+
+def seq_embed_games(pr, seq, sgfs, colors, device) -> np.ndarray:
+    """每盤各自的序列 embedding；序列解析失敗的盤給零向量（與度量特徵的有效遮罩獨立）。"""
+    from train_seq_identity import embed as _embed
+    net, ck = seq
+    views = tuple(pr.SEQ_VIEWS[os.path.basename(p_)] for p_ in ck["stores"])
+    blocks = pr._sequences_from_flat(list(sgfs), list(colors), [1] * len(sgfs), views)
+    out = np.zeros((len(sgfs), ck["dim"]), np.float32)
+    have = [i for i, b in enumerate(blocks) if len(b)]
+    if have:
+        out[have] = _embed(net, np.concatenate([blocks[i] for i in have]).astype(np.float16), device)
+    print(f"    序列 embedding：{len(have)}/{len(sgfs)} 盤有效", flush=True)
+    return out
+
+
+def scores_v2(pr, metric, tag: str, test_dir: str, method: str, l2_wd: float = 1e-4,
+              seq=None) -> tuple:
+    """新增測試集一個切分 → (題號, 候選人名單, 分數矩陣)。
+
+    seq：`load_seq_identity` 的輸出；給了就把序列 embedding 當第 9 段串在度量 embedding 後面
+    （RESULTS.md §2.40：分類器 度量＋序列 0.4511 vs 只用度量 0.4354）。
+    """
     from aicup.feature_metric import embed_features
     models, scaler, dev, cols, stores = metric
 
@@ -56,12 +86,24 @@ def scores_v2(pr, metric, tag: str, test_dir: str, method: str, l2_wd: float = 1
 
     cand = pd.read_csv(os.path.join(test_dir, f"player_identification_candidates2_{tag}.csv"))
     q = pd.read_csv(os.path.join(test_dir, f"player_identification_test2_{tag}.csv"))
-    Xc, okc = pr._metric_features(cand["sgf_content"].tolist(), cand["color"].tolist(), stores)
+    csgf, ccol = cand["sgf_content"].tolist(), cand["color"].tolist()
+    Xc, okc = pr._metric_features(csgf, ccol, stores)
     Ec = emb(Xc[okc]); pid = cand["player_id"].to_numpy()[okc]
+    d_metric = Ec.shape[1]
     names = sorted(set(cand["player_id"]))
-    feats = pr._metric_question_features(q, stores)
-    Eq = [emb(f) if len(f) else np.zeros((0, Ec.shape[1])) for f in feats]
-    D = len(models)
+    fsgf, fcol, fsizes = pr._flatten_questions(q)
+    Xq, okq = pr._metric_features(fsgf, fcol, stores)
+    if seq is not None:
+        Ec = np.concatenate([Ec, seq_embed_games(pr, seq, csgf, ccol, dev)[okc]], axis=1)
+        Sq = seq_embed_games(pr, seq, fsgf, fcol, dev)
+    Eq, pos = [], 0
+    for n in fsizes:
+        m = okq[pos:pos + n]
+        e = emb(Xq[pos:pos + n][m]) if m.any() else np.zeros((0, d_metric))
+        if seq is not None:
+            e = np.concatenate([e, Sq[pos:pos + n][m]], axis=1)
+        Eq.append(e if len(e) else np.zeros((0, Ec.shape[1]))); pos += n
+    D = len(models) + (1 if seq is not None else 0)
     if method == "template":
         G = np.stack([template(Ec[pid == n], D) for n in names])
         Q = np.stack([template(e, D) if len(e) else np.zeros(G.shape[1]) for e in Eq])
@@ -110,6 +152,7 @@ def main() -> int:
     ap.add_argument("--method", choices=["template", "classifier"], default="template")
     ap.add_argument("--l2", type=float, default=1e-4, help="classifier 的 L2 強度")
     ap.add_argument("--metric", default="cache/feature_metric_h1024s12k/models.pt")
+    ap.add_argument("--seq-identity", default="", help="train_seq_identity.py 的 checkpoint（例如 cache/seq_identity/best.pt）")
     ap.add_argument("--out", default="cache/submissions/player_v2/submission_player.csv")
     args = ap.parse_args()
 
@@ -118,8 +161,9 @@ def main() -> int:
     old = pd.read_csv(args.old)
     old = old[old["question_id"].str.match(r"^(pub|priv)_q_")]
     parts = [old]
+    seq = load_seq_identity(args.seq_identity, metric[2]) if args.seq_identity else None
     for tag in ("public", "private"):
-        parts.append(top5(*scores_v2(pr, metric, tag, args.test_dir, args.method, args.l2)))
+        parts.append(top5(*scores_v2(pr, metric, tag, args.test_dir, args.method, args.l2, seq)))
     sub = pd.concat(parts, ignore_index=True)
     validate(sub, args.test_dir)
     os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
