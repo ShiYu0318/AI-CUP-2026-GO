@@ -167,17 +167,22 @@ def env_info():
 
 
 def format_check(path, task):
-    """官方格式的最低檢查：800 列、欄位、無空值；棋力標籤合法；Top-5 互不重複。"""
+    """官方格式的最低檢查：列數、欄位、無空值；棋力標籤合法；Top-5 互不重複。
+
+    競賽一自 2026-11-11 更新版測試集起為 1,600 列（pub_/priv_/pub2_/priv2_），舊版提交為 800 列。
+    """
     with open(path, encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
-    if len(rows) != 800:
-        return f"✗ {len(rows)} 列（應為 800）"
+    want = (1600, 800) if task == "player" else (800,)
+    if len(rows) not in want:
+        return f"✗ {len(rows)} 列（應為 {' 或 '.join(map(str, want))}）"
+    n = f"✓（{len(rows)} 列）"
     if task == "rank":
         bad = [r for r in rows if r.get("pred_rank") not in RANKS]
-        return f"✗ {len(bad)} 列棋力標籤不合法" if bad else "✓（800 列）"
+        return f"✗ {len(bad)} 列棋力標籤不合法" if bad else n
     cols = [f"top_{i}" for i in range(1, 6)]
     bad = [r for r in rows if len({r.get(c) for c in cols}) != 5 or not all(r.get(c) for c in cols)]
-    return f"✗ {len(bad)} 列 Top-5 有空值或重複" if bad else "✓（800 列）"
+    return f"✗ {len(bad)} 列 Top-5 有空值或重複" if bad else n
 
 
 def next_id(rows, task):
