@@ -110,6 +110,7 @@ def main() -> int:
     ap.add_argument("--dim", type=int, default=256)
     ap.add_argument("--eval-every", type=int, default=3000)
     ap.add_argument("--device", default="auto")
+    ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", default="cache/seq_identity")
     args = ap.parse_args()
     device = pick_device(args.device)
@@ -136,6 +137,7 @@ def main() -> int:
     need = np.unique(np.concatenate([np.concatenate(pl["gal"] + pl["q"]) for pl in pools]))
     Xval = np.asarray(S[need], dtype=np.float16); pos = {int(r): i for i, r in enumerate(need)}
 
+    torch.manual_seed(args.seed)
     net = SeqIdentityNet(S.shape[-1], args.width, args.dim).to(device)
     arc = SubCenterArcFace(args.dim, len(players), k=3,
                            class_counts=torch.from_numpy(np.bincount(y, minlength=len(players)))).to(device)
