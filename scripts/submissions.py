@@ -195,6 +195,20 @@ def format_check(path, task):
     return f"✗ {len(bad)} 列 Top-5 有空值或重複" if bad else n
 
 
+def cmd_inputs(cmd: str) -> list:
+    """指令中出現、而且確實存在的**輸入**檔（checkpoint、HumanSL 存檔、沿用的舊提交檔等）。
+
+    預設模型清單（MODELS／EXTRA_MODELS）只涵蓋固定的成分；像 `--seq-identity`、`--humansl-store`、
+    `--old` 這類每次可能不同的輸入，必須從指令本身抓，否則重現紀錄會漏掉它們的指紋。
+    輸出（`--out`、`--out-dir` 後面的路徑）不算輸入。
+    """
+    toks = cmd.split()
+    outs = {toks[i + 1] for i, t in enumerate(toks[:-1]) if t in ("--out", "--out-dir")}
+    code = ("scripts/", "src/")                            # 程式碼的版本由 git_commit 記錄
+    return sorted({t for t in toks if "/" in t and t not in outs and not t.startswith(code)
+                   and os.path.isfile(t)})
+
+
 def next_id(rows, task):
     prefix = "R" if task == "rank" else "P"
     n = max([int(r["id"][1:]) for r in rows if r["id"].startswith(prefix)] or [0]) + 1
@@ -210,7 +224,7 @@ def add(args):
     shutil.copyfile(args.file, dst)
     key = (args.task, args.variant)
     cv, cv_src, e2e = LOCAL.get(key, ("", "", ""))
-    models = MODELS[args.task] + EXTRA_MODELS.get(key, [])
+    models = list(dict.fromkeys(MODELS[args.task] + EXTRA_MODELS.get(key, []) + cmd_inputs(args.cmd)))
     model_sha = {m: (_sha(m) if os.path.exists(m) else "（缺）") for m in models}
     mfp = hashlib.sha256(json.dumps(model_sha, sort_keys=True).encode()).hexdigest()[:16]
     row = {

@@ -1,6 +1,6 @@
 {
- "all_files": 24,
- "all_sha256": "62137c0b032b66b2a586200511b972902a883bea813faecc372a4463270207d2",
+ "all_files": 33,
+ "all_sha256": "b1db0e1659a3f09af8d2f0de8f39ed56e44bb5087c3e6d78345cf7ef45dc1ce6",
  "files": {
   "data/training/train_1D.csv": "879536c2b7f8fdeacf7d2ddd0b2ffab0f36b40862b7dcec48a4250cf8dea618b",
   "data/training/train_2D.csv": "167eae9e4872c96be2bcbdddcee0ef37eff249dfe00bf8dce20c4ceb468628bc",
@@ -25,7 +25,16 @@
   "data/mock_tests/player_identification_test_private.csv": "b17807d7f73f78be83a78ad048f7d86cd75f5c4a10225567a7ff74696f75dd84",
   "data/mock_tests/player_identification_test_public.csv": "e3bc196bbacc66e049aaea35a07d51fac9a4e3d1daf4a59424d1b51e511fcb20",
   "data/mock_tests/rank_prediction_test_private.csv": "0075aaae261c8689369b4be6569856c2936a917d8c21aaeb6d070cf902532d05",
-  "data/mock_tests/rank_prediction_test_public.csv": "16b127fa628e1d7df71e738197fd26c87d82d8d2a1ba004a4ca8f7f06cce736a"
+  "data/mock_tests/rank_prediction_test_public.csv": "16b127fa628e1d7df71e738197fd26c87d82d8d2a1ba004a4ca8f7f06cce736a",
+  "data/v2/tests/player_identification_candidates2_private.csv": "8e80f94689284722bd21a3f3306c476ee78aead60a4061e74a0f8aaaede36812",
+  "data/v2/tests/player_identification_candidates2_public.csv": "ac3d7d20d1a19ee7e670638b556f5c3cc021904ca4e1644bc0d0bcec4ff6616d",
+  "data/v2/tests/player_identification_candidates_private.csv": "db2cfe33be9c1e36355fac5664b758909ef80bce1be257e55bae056fba40d963",
+  "data/v2/tests/player_identification_candidates_public.csv": "e662242cb0f0b2be2009c129abd291c9c852af7fae25d8f1e1c00208785ee24d",
+  "data/v2/tests/player_identification_test2_private.csv": "52e01bcc508e3e350f47b6430a7c841531976ac4a9d294fc2328b4570ca8a527",
+  "data/v2/tests/player_identification_test2_public.csv": "33485b58da29a43d53526f9f83d92ebdc4610948cb0f5249e07bba5cbdd53d6a",
+  "data/v2/tests/player_identification_test_private.csv": "eedd2630731070633dfa264897ac739aec03879f90ac57149bba033d9bd53dee",
+  "data/v2/tests/player_identification_test_public.csv": "fbf6f14de57bc37bbec6e3d732143a2561887d37b1f36271223ad1a14810ac74",
+  "data/v2/tests/sample_submission_player_v2.csv": "70bf0e3cd31ce8aa0ad438c576f77b3f8c0ca3a49a8089bd026108ad3ba26c9c"
  },
  "note": "訓練集為官方 v1.0（v1.1 只補上 HD[n]，刻意不換，見 docs/RUNBOOK.md）"
 }

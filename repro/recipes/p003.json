@@ -1,0 +1,16 @@
+{
+ "id": "P003",
+ "task": "player",
+ "variant": "pool_classifier",
+ "cmd": "python3 scripts/predict.py --pool-classifier --test-dir data --out-dir cache/submissions/poolclf",
+ "git_commit": "8427eb2",
+ "git_dirty": "clean",
+ "data_fingerprint": "62137c0b032b66b2",
+ "models_sha256": {
+  "cache/feature_metric_h1024s12k/models.pt": "5f1b871d6a4fc4aa412d4ff8ed2acbaa207db85b6f3bf69d8017df23891a155e"
+ },
+ "output": {
+  "source": "cache/submissions/poolclf/submission_player.csv",
+  "sha256": "1e09b3b651bbadc9669f464ee6f4c16de2df896f73f9edb753873cafd42efec6"
+ }
+}

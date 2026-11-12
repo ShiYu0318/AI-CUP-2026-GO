@@ -1,0 +1,21 @@
+{
+ "id": "P006",
+ "task": "player",
+ "variant": "v2_seq",
+ "cmd": "python3 scripts/predict_player_v2.py --old submissions/player/p003.csv --method classifier --l2 1e-4 --seq-identity cache/seq_identity/step3000.pt --out cache/submissions/player_v2_seq_test/submission_player.csv",
+ "git_commit": "8009336",
+ "git_dirty": "clean",
+ "data_fingerprint": "62137c0b032b66b2",
+ "models_sha256": {
+  "cache/feature_metric_h1024s12k/models.pt": "5f1b871d6a4fc4aa412d4ff8ed2acbaa207db85b6f3bf69d8017df23891a155e"
+ },
+ "output": {
+  "source": "cache/submissions/player_v2_seq_test/submission_player.csv",
+  "sha256": "dcdd18468dab7f9d39e1066894851b57a2b5989ba612d605f229ddf67590cbed"
+ },
+ "inputs_sha256_backfilled": {
+  "note": "2026-11-12 事後補記：當初只記了預設模型清單。以下是補記當下的指紋；只追加寫入的存檔（例如 cache/humansl/*.jsonl）可能已比產生提交時更大",
+  "cache/seq_identity/step3000.pt": "80398d9db211de31d0878c5d3e382c1cb7f00880db0c856d845545a58db28134",
+  "submissions/player/p003.csv": "1e09b3b651bbadc9669f464ee6f4c16de2df896f73f9edb753873cafd42efec6"
+ }
+}

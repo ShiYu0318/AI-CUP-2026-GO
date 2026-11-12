@@ -1,0 +1,16 @@
+{
+ "id": "P002",
+ "task": "player",
+ "variant": "no_sinkhorn",
+ "cmd": "python3 scripts/predict.py --test-dir data --sinkhorn 0 --out-dir cache/submissions/no_sinkhorn",
+ "git_commit": "1f33347",
+ "git_dirty": "clean",
+ "data_fingerprint": "62137c0b032b66b2",
+ "models_sha256": {
+  "cache/feature_metric_h1024s12k/models.pt": "5f1b871d6a4fc4aa412d4ff8ed2acbaa207db85b6f3bf69d8017df23891a155e"
+ },
+ "output": {
+  "source": "cache/submissions/no_sinkhorn/submission_player.csv",
+  "sha256": "37466cb646d2b309f79b1552ba47015caa4e069b4d7d8f83fb07613925bfd59f"
+ }
+}

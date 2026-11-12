@@ -1,0 +1,16 @@
+{
+ "id": "P001",
+ "task": "player",
+ "variant": "default",
+ "cmd": "python3 scripts/predict.py --test-dir data --out-dir cache/submissions/default",
+ "git_commit": "5c0d112",
+ "git_dirty": "clean",
+ "data_fingerprint": "62137c0b032b66b2",
+ "models_sha256": {
+  "cache/feature_metric_h1024s12k/models.pt": "5f1b871d6a4fc4aa412d4ff8ed2acbaa207db85b6f3bf69d8017df23891a155e"
+ },
+ "output": {
+  "source": "cache/submissions/default/submission_player.csv",
+  "sha256": "c2565677df2d8fd3427f7ada104e50d93b87a5ebf5e545fbb21e76c1a2d63f26"
+ }
+}

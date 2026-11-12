@@ -1,0 +1,22 @@
+{
+ "id": "R002",
+ "task": "rank",
+ "variant": "humansl",
+ "cmd": "python3 scripts/predict.py --humansl --test-dir data --out-dir cache/submissions/humansl",
+ "git_commit": "ea7399a",
+ "git_dirty": "clean",
+ "data_fingerprint": "62137c0b032b66b2",
+ "models_sha256": {
+  "cache/rank_mlp_opp_big/models.pt": "c6bc2e6e7eab34184c03b2c521b824537a9167b17298d4f23d7e339cf3845a5f",
+  "cache/rank_question_opp/models.pt": "f11c502046a055cd6d0b7da93687ca2f722ba857fc6b04fe5bbd8d11b3294399",
+  "cache/rank_seq_opp_full/models.pt": "2e07915cce9193a839b5fdaa3e870ffdeda029fed5edba075eb8ae304725ab1a",
+  "cache/rank_seq_shape/models.pt": "e44f83b3fcde577d81304040f9b7d1827fc5a79e46e30324decf8bb14465d59f",
+  "cache/board/best.pt": "4e63db9a14ceab8b00c7422ce10c2b1bc24d64998279125371b2228b9234c95e",
+  "cache/katago/b18c384nbt-humanv0.bin.gz": "637746e44f0efe00ad1245a50aa9bbf0716efe364c43965ead97bd6835d84ab5",
+  "cache/humansl/pool.npz": "bceb324d5afc319f2cb55e26f420c8d3422e1826a5c5bec4365fd81895133f73"
+ },
+ "output": {
+  "source": "cache/submissions/humansl/submission_rank.csv",
+  "sha256": "7de3805c076fd3d73a79c4d84c2ceb7dc4e4f1a21cd203697752b6b7e2863ec9"
+ }
+}

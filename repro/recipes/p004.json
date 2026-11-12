@@ -1,0 +1,20 @@
+{
+ "id": "P004",
+ "task": "player",
+ "variant": "v2_template",
+ "cmd": "python3 scripts/predict_player_v2.py --old submissions/player/p003.csv --method template --out cache/submissions/player_v2_tpl/submission_player.csv",
+ "git_commit": "3e71278",
+ "git_dirty": "clean",
+ "data_fingerprint": "62137c0b032b66b2",
+ "models_sha256": {
+  "cache/feature_metric_h1024s12k/models.pt": "5f1b871d6a4fc4aa412d4ff8ed2acbaa207db85b6f3bf69d8017df23891a155e"
+ },
+ "output": {
+  "source": "cache/submissions/player_v2_tpl/submission_player.csv",
+  "sha256": "1b153233f9012c06553cd8fadc09ca376f3d857d27e30b1deaec178cddb800fd"
+ },
+ "inputs_sha256_backfilled": {
+  "note": "2026-11-12 事後補記：當初只記了預設模型清單。以下是補記當下的指紋；只追加寫入的存檔（例如 cache/humansl/*.jsonl）可能已比產生提交時更大",
+  "submissions/player/p003.csv": "1e09b3b651bbadc9669f464ee6f4c16de2df896f73f9edb753873cafd42efec6"
+ }
+}
