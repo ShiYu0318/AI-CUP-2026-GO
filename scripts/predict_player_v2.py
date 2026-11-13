@@ -93,17 +93,19 @@ def scores_v2(pr, metric, tag: str, test_dir: str, method: str, l2_wd: float = 1
     names = sorted(set(cand["player_id"]))
     fsgf, fcol, fsizes = pr._flatten_questions(q)
     Xq, okq = pr._metric_features(fsgf, fcol, stores)
-    if seq is not None:
-        Ec = np.concatenate([Ec, seq_embed_games(pr, seq, csgf, ccol, dev)[okc]], axis=1)
-        Sq = seq_embed_games(pr, seq, fsgf, fcol, dev)
+    seqs = seq or []
+    seq_dims = [sq[1]["dim"] for sq in seqs]
+    if seqs:
+        Ec = np.concatenate([Ec] + [seq_embed_games(pr, sq, csgf, ccol, dev)[okc] for sq in seqs], axis=1)
+        Sq = np.concatenate([seq_embed_games(pr, sq, fsgf, fcol, dev) for sq in seqs], axis=1)
     Eq, pos = [], 0
     for n in fsizes:
         m = okq[pos:pos + n]
         e = emb(Xq[pos:pos + n][m]) if m.any() else np.zeros((0, d_metric))
-        if seq is not None:
+        if seqs:
             e = np.concatenate([e, Sq[pos:pos + n][m]], axis=1)
         Eq.append(e if len(e) else np.zeros((0, Ec.shape[1]))); pos += n
-    D = len(models) + (1 if seq is not None else 0)
+    D = len(models) + len(seqs)
     if method == "template":
         G = np.stack([template(Ec[pid == n], D) for n in names])
         Q = np.stack([template(e, D) if len(e) else np.zeros(G.shape[1]) for e in Eq])
@@ -111,17 +113,22 @@ def scores_v2(pr, metric, tag: str, test_dir: str, method: str, l2_wd: float = 1
     elif method == "zfuse":
         # RESULTS.md §2.40：z(序列模板) + c·z(度量分類器)，新增測試集模擬 0.5632（c=0.3）／0.5616（c=0.5）
         # vs 分類器 度量 0.4354、模板 序列 0.5160。分類器只用度量的 8 段（序列 embedding 單獨餵分類器很差）。
-        if seq is None:
+        # 多個序列模型：各自模板餘弦 → z 相加；度量分類器權重 = fuse_c x 模型數
+        # （兩個模型、c=0.3 → 0.6，與 RESULTS.md §2.40 的「兩個序列 z 相加」0.5745 相同設定）。
+        if not seqs:
             raise SystemExit("--method zfuse 需要 --seq-identity")
         from aicup.rerank import pool_classifier_scores
         dm = d_metric
         idx = {n: i for i, n in enumerate(names)}
-        Gs = l2(np.stack([Ec[pid == n, dm:].mean(0) for n in names]))
-        Qs = l2(np.stack([e[:, dm:].mean(0) if len(e) else np.zeros(Ec.shape[1] - dm) for e in Eq]))
+        z = lambda M: (M - M.mean(1, keepdims=True)) / (M.std(1, keepdims=True) + 1e-9)
         Bm = pool_classifier_scores(Ec[:, :dm], np.array([idx[p] for p in pid]), [e[:, :dm] for e in Eq],
                                     len(names), device=dev, wd=l2_wd)
-        z = lambda M: (M - M.mean(1, keepdims=True)) / (M.std(1, keepdims=True) + 1e-9)
-        S = z(Qs @ Gs.T) + fuse_c * z(Bm)
+        S = fuse_c * len(seqs) * z(Bm)
+        a = dm
+        for dk in seq_dims:
+            Gs = l2(np.stack([Ec[pid == n, a:a + dk].mean(0) for n in names]))
+            Qs = l2(np.stack([e[:, a:a + dk].mean(0) if len(e) else np.zeros(dk) for e in Eq]))
+            S = S + z(Qs @ Gs.T); a += dk
     elif method == "classifier":
         from aicup.rerank import pool_classifier_scores
         idx = {n: i for i, n in enumerate(names)}
@@ -167,7 +174,8 @@ def main() -> int:
     ap.add_argument("--fuse-c", type=float, default=0.4, help="zfuse 中度量分類器的權重（模擬 0.3~0.5 都在 0.562 附近）")
     ap.add_argument("--l2", type=float, default=1e-4, help="classifier 的 L2 強度")
     ap.add_argument("--metric", default="cache/feature_metric_h1024s12k/models.pt")
-    ap.add_argument("--seq-identity", default="", help="train_seq_identity.py 的 checkpoint（例如 cache/seq_identity/best.pt）")
+    ap.add_argument("--seq-identity", nargs="*", default=[],
+                    help="train_seq_identity.py 的 checkpoint，可給多個（各自模板 z 分數相加）")
     ap.add_argument("--out", default="cache/submissions/player_v2/submission_player.csv")
     args = ap.parse_args()
 
@@ -176,7 +184,7 @@ def main() -> int:
     old = pd.read_csv(args.old)
     old = old[old["question_id"].str.match(r"^(pub|priv)_q_")]
     parts = [old]
-    seq = load_seq_identity(args.seq_identity, metric[2]) if args.seq_identity else None
+    seq = [load_seq_identity(p_, metric[2]) for p_ in args.seq_identity]
     for tag in ("public", "private"):
         parts.append(top5(*scores_v2(pr, metric, tag, args.test_dir, args.method, args.l2, seq, args.fuse_c)))
     sub = pd.concat(parts, ignore_index=True)
