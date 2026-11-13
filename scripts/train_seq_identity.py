@@ -29,8 +29,14 @@ from aicup.rank_nets import SeqStore, pick_device
 class SeqIdentityNet(nn.Module):
     """與 SeqRankNet 同一個主幹（dilated 1D-CNN，avg＋max pooling），輸出 L2 正規化的 embedding。"""
 
-    def __init__(self, n_feat: int, width: int = 192, dim: int = 256, dropout: float = 0.1):
+    def __init__(self, n_feat: int, width: int = 192, dim: int = 256, dropout: float = 0.1,
+                 in_scale=None):
         super().__init__()
+        # 每一維輸入的縮放：float16 的序列庫已正規化（x1），uint8 的 movepatch 要 x1/255。
+        # 放在模型裡（並存進 checkpoint），訓練、評估、推論三端就不可能各縮各的。
+        self.has_scale = in_scale is not None
+        if self.has_scale:
+            self.register_buffer("in_scale", torch.as_tensor(in_scale, dtype=torch.float32))
         self.stem = nn.Conv1d(n_feat, width, 5, padding=2)
         self.blocks = nn.ModuleList([
             nn.Sequential(nn.Conv1d(width, width, 5, padding=2 * r, dilation=r),
@@ -41,6 +47,8 @@ class SeqIdentityNet(nn.Module):
                                   nn.Linear(512, dim))
 
     def forward(self, x, mask):
+        if self.has_scale:
+            x = x * self.in_scale
         h = self.stem(x.transpose(1, 2))
         for b in self.blocks:
             h = h + b(h)
@@ -49,6 +57,15 @@ class SeqIdentityNet(nn.Module):
         avg = h.sum(-1) / m.sum(-1).clamp(min=1)
         mx = (h + (m - 1) * 1e4).max(-1).values
         return F.normalize(self.head(torch.cat([avg, mx], dim=1)), dim=1)
+
+
+def store_scale(paths) -> list:
+    """各序列庫每一維的縮放：uint8 的庫（movepatch）乘 1/255，其餘 x1。"""
+    out = []
+    for p in paths:
+        a = np.load(p, mmap_mode="r")
+        out += [1.0 / 255.0 if a.dtype == np.uint8 else 1.0] * a.shape[-1]
+    return out
 
 
 @torch.no_grad()
@@ -111,6 +128,8 @@ def main() -> int:
     ap.add_argument("--eval-every", type=int, default=3000)
     ap.add_argument("--device", default="auto")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--train-games", type=int, default=0,
+                    help="只用前 N 盤訓練（0 = 全部）；加了 uint8 的大庫時用來控制記憶體")
     ap.add_argument("--stop-after-peak", type=int, default=0,
                     help="從這一步起，若評估分數連續兩次低於最佳就停止（0 = 不停）。"
                          "30k 排程的最佳通常在 12k~14k（RESULTS.md §2.40）；完整的短排程反而較差")
@@ -128,20 +147,28 @@ def main() -> int:
     meta = load_metadata(); split = make_player_split(meta, val_frac=0.20, seed=42)
     vm = split.mask(meta); pid = meta["player_id"].to_numpy()
     tr = np.flatnonzero((~vm) & ok)
+    if args.train_games and args.train_games < len(tr):
+        tr = np.sort(np.random.default_rng(args.seed).choice(tr, args.train_games, replace=False))
     players = sorted(set(pid[tr])); p2l = {p: i for i, p in enumerate(players)}
     y = np.array([p2l[p] for p in pid[tr]], dtype=np.int64)
     print(f"訓練 {len(tr):,} 盤、{len(players):,} 位身分、序列 {S.shape[1]}x{S.shape[-1]}", flush=True)
-    Xtr = torch.from_numpy(np.asarray(S[tr], dtype=np.float16))          # 保持 float16（約 6 GB）
-    Mtr = Xtr.abs().sum(-1) > 0
+    # 各庫保持原本的型別分開放（float16 / uint8）；先串接會整份升成 float16，記憶體翻倍。
+    Xparts = [torch.from_numpy(np.ascontiguousarray(np.asarray(p_[tr]))) for p_ in S.parts]
+    Mtr = None
+    for xp in Xparts:
+        m_ = xp.abs().sum(-1) > 0 if xp.dtype != torch.uint8 else xp.sum(-1, dtype=torch.int32) > 0
+        Mtr = m_ if Mtr is None else (Mtr | m_)
     ytr = torch.from_numpy(y)
-    print(f"  訓練張量 {Xtr.nbytes / 1e9:.2f} GB", flush=True)
+    print(f"  訓練張量 {sum(x.nbytes for x in Xparts) / 1e9:.2f} GB（{[str(x.dtype) for x in Xparts]}）", flush=True)
+    scale = store_scale(paths)
 
     pools = v2_pools(meta, split, ok)
     need = np.unique(np.concatenate([np.concatenate(pl["gal"] + pl["q"]) for pl in pools]))
     Xval = np.asarray(S[need], dtype=np.float16); pos = {int(r): i for i, r in enumerate(need)}
 
     torch.manual_seed(args.seed)
-    net = SeqIdentityNet(S.shape[-1], args.width, args.dim).to(device)
+    net = SeqIdentityNet(S.shape[-1], args.width, args.dim,
+                         in_scale=scale if any(v != 1.0 for v in scale) else None).to(device)
     arc = SubCenterArcFace(args.dim, len(players), k=3,
                            class_counts=torch.from_numpy(np.bincount(y, minlength=len(players)))).to(device)
     opt = torch.optim.AdamW(list(net.parameters()) + list(arc.parameters()), lr=args.lr, weight_decay=1e-4)
@@ -149,7 +176,8 @@ def main() -> int:
     best, hist, t0 = -1.0, [], time.time()
     for step in range(1, args.steps + 1):
         i = torch.randint(0, len(ytr), (args.batch,))
-        emb = net(Xtr[i].to(device).float(), Mtr[i].to(device))
+        xb = torch.cat([xp[i].to(device).float() for xp in Xparts], dim=-1)
+        emb = net(xb, Mtr[i].to(device))
         loss = F.cross_entropy(arc(emb, ytr[i].to(device)), ytr[i].to(device))
         opt.zero_grad(set_to_none=True); loss.backward()
         nn.utils.clip_grad_norm_(net.parameters(), 5.0)
@@ -162,7 +190,8 @@ def main() -> int:
             print(f"  step {step:>6} loss {loss.item():.3f}  新增測試集模擬（模板）{sc:.4f}"
                   f"  ({(time.time() - t0) / 60:.0f} 分)", flush=True)
             ck = {"model": net.state_dict(), "n_feat": S.shape[-1], "width": args.width, "dim": args.dim,
-                  "stores": paths, "step": step, "v2_score": sc}
+                  "stores": paths, "step": step, "v2_score": sc,
+                  "in_scale": scale if net.has_scale else None}
             torch.save(ck, os.path.join(args.out, "last.pt"))
             if sc > best:
                 best = sc; torch.save(ck, os.path.join(args.out, "best.pt"))

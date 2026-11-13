@@ -34,6 +34,7 @@ from aicup.moveshape import (N_SHAPE_FEATURES,                 # noqa: E402
                              batch_shape_sequences)
 from aicup.movequality import (N_QUALITY_FEATURES,             # noqa: E402
                                batch_quality_sequences)
+from aicup.movepatch import N_PATCH_FEATURES, batch_patch_sequences  # noqa: E402
 
 CACHE_DIR = "cache"
 
@@ -49,8 +50,8 @@ def _worker(args):
     if opponent:
         colors = _flip(colors)
     t0 = time.time()
-    fn = {"shape": batch_shape_sequences,
-          "quality": batch_quality_sequences}.get(kind, batch_move_sequences)
+    fn = {"shape": batch_shape_sequences, "quality": batch_quality_sequences,
+          "patch": batch_patch_sequences}.get(kind, batch_move_sequences)
     S, ok = fn(d["sgf_content"].tolist(), colors, max_moves=max_moves)
     np.savez(os.path.join(CACHE_DIR, f"_seq{file_idx:02d}.npz"), S=S, ok=ok)
     return file_idx, len(d), int(ok.sum()), time.time() - t0
@@ -75,9 +76,15 @@ def main() -> int:
                     help="改抽**棋形**序列（moveshape，12 維）而不是 moveseq 的 12 維。"
                          "手法類別（接／尖／跳／飛）取代曼哈頓距離——"
                          "尖與跳的曼哈頓距離都是 2，在 moveseq 裡被混為一談")
+    ap.add_argument("--patch", action="store_true",
+                    help="改抽**落子座標＋落子前 5x5 局部盤面**（movepatch，52 維 uint8）。"
+                         "競賽一的身分特徵：moveseq／moveshape 沒有座標也看不到周圍棋形")
     ap.add_argument("--out", default="cache/sequences.npy")
     args = ap.parse_args()
-    kind = "quality" if args.quality else ("shape" if args.shape else "move")
+    kind = ("patch" if args.patch else "quality" if args.quality
+            else ("shape" if args.shape else "move"))
+    if args.patch and args.out == "cache/sequences.npy":
+        args.out = "cache/seqpatch_opp.npy" if args.opponent else "cache/seqpatch.npy"
     if args.quality and args.out == "cache/sequences.npy":
         args.out = "cache/seqqual_opp.npy" if args.opponent else "cache/seqqual.npy"
     elif args.shape and args.out == "cache/sequences.npy":
@@ -102,16 +109,22 @@ def main() -> int:
             print(f"  [{os.path.basename(files[fi]):>16}] {n:,} 局，成功 {n_ok:,}"
                   f"（{n_ok / max(n, 1):.4f}），{el / 60:.1f} 分", flush=True)
 
-    parts, oks = [], []
+    # 逐檔寫進磁碟上的 memmap：不在記憶體裡一次串接（1M x 160 x 52 的峰值會是兩倍）。
+    n_out = {"shape": N_SHAPE_FEATURES, "quality": N_QUALITY_FEATURES,
+             "patch": N_PATCH_FEATURES}.get(kind, N_MOVE_FEATURES)
+    sizes, dtype = [], None
     for fi in range(len(files)):
-        z = np.load(os.path.join(CACHE_DIR, f"_seq{fi:02d}.npz"))
-        parts.append(z["S"]); oks.append(z["ok"])
-    S = np.concatenate(parts); ok = np.concatenate(oks)
-    n_out = {"shape": N_SHAPE_FEATURES, "quality": N_QUALITY_FEATURES}.get(
-        kind, N_MOVE_FEATURES)
-    assert S.shape[1:] == (args.max_moves, n_out)
-
-    np.save(args.out, S)
+        with np.load(os.path.join(CACHE_DIR, f"_seq{fi:02d}.npz")) as z:
+            sizes.append(len(z["ok"])); dtype = z["S"].dtype
+    S = np.lib.format.open_memmap(args.out, mode="w+", dtype=dtype,
+                                  shape=(sum(sizes), args.max_moves, n_out))
+    oks, a = [], 0
+    for fi in range(len(files)):
+        with np.load(os.path.join(CACHE_DIR, f"_seq{fi:02d}.npz")) as z:
+            assert z["S"].shape[1:] == (args.max_moves, n_out)
+            S[a:a + sizes[fi]] = z["S"]; oks.append(z["ok"]); a += sizes[fi]
+    S.flush()
+    ok = np.concatenate(oks)
     np.save(args.out.replace(".npy", "_ok.npy"), ok)
     for fi in range(len(files)):
         os.remove(os.path.join(CACHE_DIR, f"_seq{fi:02d}.npz"))

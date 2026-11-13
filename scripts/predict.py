@@ -279,6 +279,7 @@ SEQ_VIEWS = {
     "seqqual_opp.npy":     ("quality", True, 160),
     "sequences240.npy":    ("move", False, 240),
     "sequences240_opp.npy": ("move", True, 240),
+    "seqpatch.npy":        ("patch", False, 160),
 }
 
 
@@ -329,7 +330,9 @@ def _sequences_from_flat(flat_sgf, flat_col, sizes, views) -> list:
     from aicup.moveshape import batch_shape_sequences
     from aicup.movequality import batch_quality_sequences
 
-    _FN = {"shape": batch_shape_sequences, "quality": batch_quality_sequences}
+    from aicup.movepatch import batch_patch_sequences
+    _FN = {"shape": batch_shape_sequences, "quality": batch_quality_sequences,
+           "patch": batch_patch_sequences}
     flip = ["W" if normalise_color(c) == BLACK else "B" for c in flat_col]
     parts, ok = [], None
     for kind, opp, mm in views:

@@ -49,7 +49,7 @@ def load_seq_identity(path: str, device):
     sys.path.insert(0, HERE)
     from train_seq_identity import SeqIdentityNet
     ck = torch.load(path, map_location="cpu", weights_only=False)
-    net = SeqIdentityNet(ck["n_feat"], ck["width"], ck["dim"])
+    net = SeqIdentityNet(ck["n_feat"], ck["width"], ck["dim"], in_scale=ck.get("in_scale"))
     net.load_state_dict(ck["model"])
     return net.to(device).eval(), ck
 
