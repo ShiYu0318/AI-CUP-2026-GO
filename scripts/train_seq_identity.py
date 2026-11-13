@@ -111,6 +111,9 @@ def main() -> int:
     ap.add_argument("--eval-every", type=int, default=3000)
     ap.add_argument("--device", default="auto")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--stop-after-peak", type=int, default=0,
+                    help="從這一步起，若評估分數連續兩次低於最佳就停止（0 = 不停）。"
+                         "30k 排程的最佳通常在 12k~14k（RESULTS.md §2.40）；完整的短排程反而較差")
     ap.add_argument("--out", default="cache/seq_identity")
     args = ap.parse_args()
     device = pick_device(args.device)
@@ -165,6 +168,10 @@ def main() -> int:
                 best = sc; torch.save(ck, os.path.join(args.out, "best.pt"))
             with open(os.path.join(args.out, "history.json"), "w") as fh:
                 json.dump(hist, fh, indent=1)
+            if (args.stop_after_peak and step >= args.stop_after_peak and len(hist) >= 2
+                    and all(h["v2_score"] < best for h in hist[-2:])):
+                print(f"  連續兩次低於最佳 {best:.4f}，停止", flush=True)
+                break
     print(f"最佳 {best:.4f}", flush=True)
     return 0
 
