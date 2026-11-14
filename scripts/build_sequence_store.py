@@ -34,7 +34,8 @@ from aicup.moveshape import (N_SHAPE_FEATURES,                 # noqa: E402
                              batch_shape_sequences)
 from aicup.movequality import (N_QUALITY_FEATURES,             # noqa: E402
                                batch_quality_sequences)
-from aicup.movepatch import N_PATCH_FEATURES, batch_patch_sequences  # noqa: E402
+from aicup.movepatch import (N_PATCH7_FEATURES, N_PATCH_FEATURES,  # noqa: E402
+                             batch_patch7_sequences, batch_patch_sequences)
 
 CACHE_DIR = "cache"
 
@@ -51,7 +52,7 @@ def _worker(args):
         colors = _flip(colors)
     t0 = time.time()
     fn = {"shape": batch_shape_sequences, "quality": batch_quality_sequences,
-          "patch": batch_patch_sequences}.get(kind, batch_move_sequences)
+          "patch": batch_patch_sequences, "patch7": batch_patch7_sequences}.get(kind, batch_move_sequences)
     S, ok = fn(d["sgf_content"].tolist(), colors, max_moves=max_moves)
     np.savez(os.path.join(CACHE_DIR, f"_seq{file_idx:02d}.npz"), S=S, ok=ok)
     return file_idx, len(d), int(ok.sum()), time.time() - t0
@@ -79,11 +80,14 @@ def main() -> int:
     ap.add_argument("--patch", action="store_true",
                     help="改抽**落子座標＋落子前 5x5 局部盤面**（movepatch，52 維 uint8）。"
                          "競賽一的身分特徵：moveseq／moveshape 沒有座標也看不到周圍棋形")
+    ap.add_argument("--patch7", action="store_true", help="同 --patch，但局部盤面 7x7（100 維 uint8）")
     ap.add_argument("--out", default="cache/sequences.npy")
     args = ap.parse_args()
-    kind = ("patch" if args.patch else "quality" if args.quality
+    kind = ("patch7" if args.patch7 else "patch" if args.patch else "quality" if args.quality
             else ("shape" if args.shape else "move"))
-    if args.patch and args.out == "cache/sequences.npy":
+    if args.patch7 and args.out == "cache/sequences.npy":
+        args.out = "cache/seqpatch7.npy"
+    elif args.patch and args.out == "cache/sequences.npy":
         args.out = "cache/seqpatch_opp.npy" if args.opponent else "cache/seqpatch.npy"
     if args.quality and args.out == "cache/sequences.npy":
         args.out = "cache/seqqual_opp.npy" if args.opponent else "cache/seqqual.npy"
@@ -111,7 +115,7 @@ def main() -> int:
 
     # 逐檔寫進磁碟上的 memmap：不在記憶體裡一次串接（1M x 160 x 52 的峰值會是兩倍）。
     n_out = {"shape": N_SHAPE_FEATURES, "quality": N_QUALITY_FEATURES,
-             "patch": N_PATCH_FEATURES}.get(kind, N_MOVE_FEATURES)
+             "patch": N_PATCH_FEATURES, "patch7": N_PATCH7_FEATURES}.get(kind, N_MOVE_FEATURES)
     sizes, dtype = [], None
     for fi in range(len(files)):
         with np.load(os.path.join(CACHE_DIR, f"_seq{fi:02d}.npz")) as z:

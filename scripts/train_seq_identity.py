@@ -128,6 +128,8 @@ def main() -> int:
     ap.add_argument("--eval-every", type=int, default=3000)
     ap.add_argument("--device", default="auto")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--mmap", action="store_true",
+                    help="訓練資料不載入記憶體，每個 batch 從磁碟（memmap）讀；可用全部 78 萬盤與更大的特徵")
     ap.add_argument("--train-games", type=int, default=0,
                     help="只用前 N 盤訓練（0 = 全部）；加了 uint8 的大庫時用來控制記憶體")
     ap.add_argument("--stop-after-peak", type=int, default=0,
@@ -152,14 +154,29 @@ def main() -> int:
     players = sorted(set(pid[tr])); p2l = {p: i for i, p in enumerate(players)}
     y = np.array([p2l[p] for p in pid[tr]], dtype=np.int64)
     print(f"訓練 {len(tr):,} 盤、{len(players):,} 位身分、序列 {S.shape[1]}x{S.shape[-1]}", flush=True)
-    # 各庫保持原本的型別分開放（float16 / uint8）；先串接會整份升成 float16，記憶體翻倍。
-    Xparts = [torch.from_numpy(np.ascontiguousarray(np.asarray(p_[tr]))) for p_ in S.parts]
-    Mtr = None
-    for xp in Xparts:
-        m_ = xp.abs().sum(-1) > 0 if xp.dtype != torch.uint8 else xp.sum(-1, dtype=torch.int32) > 0
-        Mtr = m_ if Mtr is None else (Mtr | m_)
     ytr = torch.from_numpy(y)
-    print(f"  訓練張量 {sum(x.nbytes for x in Xparts) / 1e9:.2f} GB（{[str(x.dtype) for x in Xparts]}）", flush=True)
+    if args.mmap:
+        # 每批 512 盤從 SSD 隨機讀（排序後讀、再還原順序）；記憶體只放 meta 與當批資料。
+        Xparts = None
+        print(f"  訓練資料走 memmap（{len(tr):,} 盤，不載入記憶體）", flush=True)
+
+        def get_batch(i):
+            ii = i.numpy(); o = np.argsort(ii); rows = tr[ii[o]]
+            xs = [torch.from_numpy(np.asarray(p_[rows])) for p_ in S.parts]
+            inv = torch.from_numpy(np.argsort(o))
+            xb = torch.cat([x.float() for x in xs], dim=-1)[inv]
+            return xb, xb.abs().sum(-1) > 0
+    else:
+        # 各庫保持原本的型別分開放（float16 / uint8）；先串接會整份升成 float16，記憶體翻倍。
+        Xparts = [torch.from_numpy(np.ascontiguousarray(np.asarray(p_[tr]))) for p_ in S.parts]
+        Mtr = None
+        for xp in Xparts:
+            m_ = xp.abs().sum(-1) > 0 if xp.dtype != torch.uint8 else xp.sum(-1, dtype=torch.int32) > 0
+            Mtr = m_ if Mtr is None else (Mtr | m_)
+        print(f"  訓練張量 {sum(x.nbytes for x in Xparts) / 1e9:.2f} GB（{[str(x.dtype) for x in Xparts]}）", flush=True)
+
+        def get_batch(i):
+            return torch.cat([xp[i].float() for xp in Xparts], dim=-1), Mtr[i]
     scale = store_scale(paths)
 
     pools = v2_pools(meta, split, ok)
@@ -174,10 +191,25 @@ def main() -> int:
     opt = torch.optim.AdamW(list(net.parameters()) + list(arc.parameters()), lr=args.lr, weight_decay=1e-4)
     sch = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=args.steps, pct_start=0.05)
     best, hist, t0 = -1.0, [], time.time()
+    if args.mmap:
+        # 背景執行緒預先讀下一批，讓磁碟讀取（約 160 ms／批）與 GPU 運算重疊。
+        import queue, threading
+        q_ = queue.Queue(maxsize=4)
+
+        def _producer(k):
+            g = torch.Generator().manual_seed(args.seed * 1000 + k)       # 每個執行緒不同的種子，避免重複的批
+            while True:
+                i_ = torch.randint(0, len(ytr), (args.batch,), generator=g)
+                q_.put((i_,) + get_batch(i_))
+        for k in range(2):
+            threading.Thread(target=_producer, args=(k,), daemon=True).start()
     for step in range(1, args.steps + 1):
-        i = torch.randint(0, len(ytr), (args.batch,))
-        xb = torch.cat([xp[i].to(device).float() for xp in Xparts], dim=-1)
-        emb = net(xb, Mtr[i].to(device))
+        if args.mmap:
+            i, xb, mb = q_.get()
+        else:
+            i = torch.randint(0, len(ytr), (args.batch,))
+            xb, mb = get_batch(i)
+        emb = net(xb.to(device), mb.to(device))
         loss = F.cross_entropy(arc(emb, ytr[i].to(device)), ytr[i].to(device))
         opt.zero_grad(set_to_none=True); loss.backward()
         nn.utils.clip_grad_norm_(net.parameters(), 5.0)

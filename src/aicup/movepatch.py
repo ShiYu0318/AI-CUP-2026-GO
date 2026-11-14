@@ -17,18 +17,26 @@ from .features import normalise_color
 from .goboard import EMPTY, SIZE, Board, parse_moves
 from .moveseq import MAX_MOVES, MIN_MY_MOVES
 
-R = 2                                   # 5x5
-N_PATCH_FEATURES = 2 + 2 * (2 * R + 1) ** 2
+R = 2                                   # 5x5（預設）；radius=3 → 7x7（patch7）
 PATCH_SCALE = 1.0 / 255.0
 
 
-def patch_sequence(sgf: str, color, max_moves: int = MAX_MOVES) -> np.ndarray | None:
+def n_patch_features(radius: int = R) -> int:
+    return 2 + 2 * (2 * radius + 1) ** 2
+
+
+N_PATCH_FEATURES = n_patch_features(R)
+N_PATCH7_FEATURES = n_patch_features(3)
+
+
+def patch_sequence(sgf: str, color, max_moves: int = MAX_MOVES, radius: int = R) -> np.ndarray | None:
+    R = radius
     my = normalise_color(color)
     moves = parse_moves(sgf)
     if len(moves) < 30:
         return None
     board = Board()
-    out = np.zeros((max_moves, N_PATCH_FEATURES), dtype=np.uint8)
+    out = np.zeros((max_moves, n_patch_features(R)), dtype=np.uint8)
     w = 2 * R + 1
     k = 0
     for col, r, c in moves:
@@ -49,16 +57,21 @@ def patch_sequence(sgf: str, color, max_moves: int = MAX_MOVES) -> np.ndarray | 
     return out if k >= MIN_MY_MOVES else None
 
 
-def batch_patch_sequences(sgfs, colors, max_moves: int = MAX_MOVES):
-    """一批棋局 → (N, max_moves, N_PATCH_FEATURES) uint8 與有效遮罩。"""
+def batch_patch_sequences(sgfs, colors, max_moves: int = MAX_MOVES, radius: int = R):
+    """一批棋局 → (N, max_moves, n_patch_features(radius)) uint8 與有效遮罩。"""
     n = len(sgfs)
-    out = np.zeros((n, max_moves, N_PATCH_FEATURES), dtype=np.uint8)
+    out = np.zeros((n, max_moves, n_patch_features(radius)), dtype=np.uint8)
     ok = np.zeros(n, dtype=bool)
     for i, (s, c) in enumerate(zip(sgfs, colors)):
         try:
-            v = patch_sequence(s, c, max_moves=max_moves)
+            v = patch_sequence(s, c, max_moves=max_moves, radius=radius)
         except Exception:
             v = None
         if v is not None:
             out[i] = v; ok[i] = True
     return out, ok
+
+
+def batch_patch7_sequences(sgfs, colors, max_moves: int = MAX_MOVES):
+    """7x7 版（100 維）。"""
+    return batch_patch_sequences(sgfs, colors, max_moves=max_moves, radius=3)
