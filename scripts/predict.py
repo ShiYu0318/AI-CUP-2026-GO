@@ -717,6 +717,11 @@ def main() -> int:
                          "eps 0.001~0.003 是平台；≤0.003 時勝過匈牙利算法（0.9543）。"
                          "⚠️ 若官方規格與上述不符（例如候選庫含干擾項），"
                          "退回 0.0075——那是在假設被違反時仍為正的保守值")
+    ap.add_argument("--rank-shift-align", default="none", choices=["none", "mean", "quantile"],
+                    help="棋力測試集偏移校正（public／private 各自做）。mean = 把該 split 的平均期望等級"
+                         "平移到「等級均衡的校準集」平均再套切點（保守版）；quantile = 依期望等級排序、"
+                         "強制每級等量。docs/PRIVATE_FIRST_PLAN.md §2.3")
+    ap.add_argument("--rank-only", action="store_true", help="只跑競賽二（跳過舊版玩家辨識）")
     ap.add_argument("--decode", default="threshold",
                     choices=["threshold", "expected", "argmax"],
                     help="解碼方式。實測（5 次獨立切分）：最佳化切點 0.4336±0.0032 > "
@@ -1019,6 +1024,9 @@ def main() -> int:
             print(f"  切點改用 {args.threshold_prior} 先驗校準（{len(_ti)} 題；stacker 不變）", flush=True)
         _th = optimise_thresholds(_ev[_ti], _q.true_rank_id[_ti])
         calib = (_T, _th, stacker)
+        _yt = _q.true_rank_id[_ti]
+        _cal_mean = float(np.mean([_ev[_ti][_yt == r].mean() for r in np.unique(_yt)]))
+        print(f"  等級均衡校準集的平均期望等級 {_cal_mean:.3f}", flush=True)
         print(f"  切點校準完成（{len(_q.true_rank_id)} 題）："
               f"{'T=%.2f, ' % _T if _T is not None else ''}"
               f"切點={np.round(_th, 2).tolist()}", flush=True)
@@ -1141,6 +1149,20 @@ def main() -> int:
             else:
                 ev = expected_level(apply_temperature(lo, T))
             pred = apply_thresholds(ev, th)
+            _shift = _cal_mean - float(ev.mean())
+            print(f"  {tag} 平均期望等級 {ev.mean():.3f}（校準 {_cal_mean:.3f}，差 {_shift:+.3f}）；"
+                  f"固定切點平均預測等級 {pred.mean():.3f}，各級題數 {np.bincount(pred, minlength=10).tolist()}", flush=True)
+            np.savez(os.path.join(args.out_dir, f"rank_ev_{tag}.npz"), ev=ev, th=np.asarray(th),
+                     cal_mean=_cal_mean, qid=np.asarray(df["question_id"].tolist()),
+                     sizes=np.array([max(len(f), 1) for f in feats]))
+            if args.rank_shift_align == "mean":
+                pred = apply_thresholds(ev + _shift, th)
+            elif args.rank_shift_align == "quantile":
+                n_ = len(ev); pred = np.empty(n_, int)
+                pred[np.argsort(ev, kind="stable")] = np.minimum(np.arange(n_) * 10 // n_, 9)
+            if args.rank_shift_align != "none":
+                print(f"  {tag} 偏移校正（{args.rank_shift_align}）後平均預測等級 {pred.mean():.3f}，"
+                      f"各級題數 {np.bincount(pred, minlength=10).tolist()}", flush=True)
         elif args.decode == "expected":
             pred = decode_expected_score(apply_temperature(lo, args.temperature))
         else:
@@ -1156,6 +1178,8 @@ def main() -> int:
         y = np.array([RANK_TO_ID[t] for t in truth])
         print(f"  離線分數 {rank_final_score(np.array(preds), y):.4f}", flush=True)
 
+    if args.rank_only:
+        return
     # ---------------- 競賽一 ----------------
     print("\n" + "=" * 60, flush=True)
     print("競賽一：玩家辨識", flush=True)
