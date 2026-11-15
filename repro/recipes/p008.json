@@ -1,0 +1,19 @@
+{
+ "id": "P008",
+ "task": "player",
+ "variant": "v2_zfuse2",
+ "cmd": "python3 scripts/predict_player_v2.py --old submissions/player/p003.csv --method zfuse --fuse-c 0.3 --seq-identity cache/seq_identity/step12000.pt cache/seq_identity_30k_s2/step14000.pt --out cache/submissions/player_v2_zfuse2/submission_player.csv",
+ "git_commit": "ddb4e00",
+ "git_dirty": "clean",
+ "data_fingerprint": "b1db0e1659a3f09a",
+ "models_sha256": {
+  "cache/feature_metric_h1024s12k/models.pt": "5f1b871d6a4fc4aa412d4ff8ed2acbaa207db85b6f3bf69d8017df23891a155e",
+  "cache/seq_identity/step12000.pt": "42d210d491a0b10a8852d419558f741f8fa87b2ef2edf201d64cda784a2781a1",
+  "cache/seq_identity_30k_s2/step14000.pt": "7a4b56f3406685e11cd7791196cc1569cb341122ad876915b496182256743613",
+  "submissions/player/p003.csv": "1e09b3b651bbadc9669f464ee6f4c16de2df896f73f9edb753873cafd42efec6"
+ },
+ "output": {
+  "source": "cache/submissions/player_v2_zfuse2/submission_player.csv",
+  "sha256": "7b4d7d513ec7ebc87db7ee207f9f01d3649422f108a00c57bf369c9189700c07"
+ }
+}
