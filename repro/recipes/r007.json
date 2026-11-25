@@ -3,7 +3,7 @@
  "task": "rank",
  "variant": "humansl_opp_meanshift",
  "cmd": "AICUP_HUMANSL_PROFILES=1,3,5,7,9 python3 scripts/predict.py --humansl --humansl-opponent --humansl-store cache/humansl/games_p5all.jsonl --pool-classifier --test-dir data --rank-only --rank-shift-align mean --out-dir cache/submissions/rank_shift_mean",
- "git_commit": "acec2c8",
+ "git_commit": "58c62da",
  "git_dirty": "clean",
  "data_fingerprint": "b1db0e1659a3f09a",
  "models_sha256": {

@@ -3,7 +3,7 @@
  "task": "rank",
  "variant": "humansl_opp",
  "cmd": "AICUP_HUMANSL_PROFILES=1,3,5,7,9 python3 scripts/predict.py --humansl --humansl-opponent --humansl-store cache/humansl/games_p5all.jsonl --pool-classifier --test-dir data --out-dir cache/submissions/humansl_opp_a",
- "git_commit": "1fcc72d",
+ "git_commit": "85cb11f",
  "git_dirty": "clean",
  "data_fingerprint": "62137c0b032b66b2",
  "models_sha256": {

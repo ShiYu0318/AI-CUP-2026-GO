@@ -3,7 +3,7 @@
  "task": "rank",
  "variant": "uniform_thresholds",
  "cmd": "python3 scripts/predict.py --threshold-prior uniform --test-dir data --out-dir cache/submissions/uniform_thr",
- "git_commit": "80a80c7",
+ "git_commit": "4d1605b",
  "git_dirty": "dirty",
  "data_fingerprint": "62137c0b032b66b2",
  "models_sha256": {

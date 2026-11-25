@@ -3,7 +3,7 @@
  "task": "player",
  "variant": "v2_classifier",
  "cmd": "python3 scripts/predict_player_v2.py --old submissions/player/p003.csv --method classifier --l2 1e-4 --out cache/submissions/player_v2_clf/submission_player.csv",
- "git_commit": "00fdbf9",
+ "git_commit": "bc5fce7",
  "git_dirty": "clean",
  "data_fingerprint": "62137c0b032b66b2",
  "models_sha256": {

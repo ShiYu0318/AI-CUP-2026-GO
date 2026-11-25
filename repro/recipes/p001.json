@@ -3,7 +3,7 @@
  "task": "player",
  "variant": "default",
  "cmd": "python3 scripts/predict.py --test-dir data --out-dir cache/submissions/default",
- "git_commit": "5c0d112",
+ "git_commit": "8ee3895",
  "git_dirty": "clean",
  "data_fingerprint": "62137c0b032b66b2",
  "models_sha256": {

@@ -12,7 +12,7 @@
 | `models.tsv` | 上線用的每個 checkpoint 與外部模型的 sha256、大小、用途、來源 |
 | `train_args/*.json` | 每個 checkpoint 內存的訓練參數（不靠記憶或文件，直接從權重檔取出） |
 | `data_manifest.json` | 訓練集與測試檔的 sha256，以及整體指紋 |
-| `commit_map.tsv` | 2026-09-29 作者改名改寫了所有 commit 雜湊；帳本引用舊雜湊，這裡給新舊對照 |
+| `commit_map.tsv` | （靜態檔，不由本程式重建）歷史改寫前的舊 commit 雜湊 → 目前的雜湊 |
 """
 from __future__ import annotations
 
@@ -178,7 +178,7 @@ def main() -> int:
     build_requirements()
     build_models()
     build_data_manifest(args.test_dir)
-    build_commit_map()
+    # commit_map.tsv 是靜態檔：歷史改寫過兩次，舊雜湊已無法從現有的 ref 推回來，不要重建。
     return 0
 
 

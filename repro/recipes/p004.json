@@ -3,7 +3,7 @@
  "task": "player",
  "variant": "v2_template",
  "cmd": "python3 scripts/predict_player_v2.py --old submissions/player/p003.csv --method template --out cache/submissions/player_v2_tpl/submission_player.csv",
- "git_commit": "3e71278",
+ "git_commit": "350ae1e",
  "git_dirty": "clean",
  "data_fingerprint": "62137c0b032b66b2",
  "models_sha256": {

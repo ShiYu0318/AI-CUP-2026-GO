@@ -3,7 +3,7 @@
  "task": "player",
  "variant": "v2_zfuse3",
  "cmd": "python3 scripts/predict_player_v2.py --old submissions/player/p003.csv --method zfuse --fuse-c 0.3 --seq-identity cache/seq_identity/step12000.pt cache/seq_identity_30k_s2/step14000.pt cache/seq_identity_30k_s3q/step12000.pt --out cache/submissions/player_v2_zfuse3/submission_player.csv",
- "git_commit": "113efcd",
+ "git_commit": "d7a1a01",
  "git_dirty": "clean",
  "data_fingerprint": "b1db0e1659a3f09a",
  "models_sha256": {

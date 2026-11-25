@@ -1,242 +1,537 @@
-# 2026-09-29 作者改名（士育→ShiYu）改寫了全部 commit 雜湊；內容（tree）不變。
-# 帳本（docs/RESULTS.md）引用的是左欄的舊雜湊，在遠端請查右欄。
-old	new	subject
-cba14fa	dd62416	feat: train the player metric model for 6000 steps
-aa75631	370dafa	feat: widen the player metric model to a 1024-unit hidden layer
-31dcaf2	f5b9761	refactor: keep two sequence variants and derive their stores from each checkpoint
-8a63f5c	0811d72	feat: allow extra board models as ensemble members and seed board training
-88ce884	f89d0a4	docs: update headline scores
-5afa45b	bd496b3	feat: ship the eight-seed metric ensemble and add weight EMA to board training
-68bf7e0	082ce94	fix: accept both official naming schemes for the test files
-20194de	051e348	perf: gather and standardise features in chunks to cut peak memory
-140d52a	8825ebb	feat: keep per-seed scores in the player evaluation for paired comparisons
-bd39daa	9cd1f96	feat: add optional symmetry test-time augmentation to the board component
-e39c1eb	1c5fa33	perf: share one memory-mapped SGF store across processes and loader workers
-d56a1c7	d28dc1b	fix: load the shipped board model from a frozen copy instead of the training output
-f5e06aa	3dd8b4c	chore: align the gate baseline with the shipped ensemble
-4fb87dc	5acde64	feat: add the board CNN to the production ensemble
-98567ee	e98af21	fix: give the board component the same set members in eval as in training
-8d4d4b6	14bf7ae	fix: parse the colour field strictly when building board planes
-ddc9320	bcbc933	chore: install the package instead of patching sys.path in every script
-7f2716b	b611bfe	fix: escape percent signs in argparse help so --help works
-56c9813	6d03178	refactor: move rank model definitions into the library and guard the layering
-8a45203	408c970	chore: keep experiment records and run artifacts out of the public repo
-a77f53f	9145da0	feat: record machine time for every experiment and report gain per hour
-d601040	d9dc804	chore: keep the early exploration scripts in scripts with status notes
-f954a26	8874acb	chore: retire early exploration scripts into scripts/legacy with provenance notes
-45463a4	6326940	exp: board CNN gives 0.0080 once checkpoints are picked by rank correlation
-812455d	bb96955	fix: select board CNN checkpoints by rank correlation not decoded score
-30f45a8	654fe32	exp: board CNN adds 0.0020 to the ensemble while still badly undertrained
-5e369e0	7b78b09	docs: judge a component by rank correlation, not its standalone decoded score
-e44ec9f	c178067	fix: use each board snapshot as its own set member in train and eval
-f6c78cd	53f8b09	feat: add a dependency check mode so missing artifacts fail loudly
-8edb54d	50ed0de	docs: note that mid-training CNN scores are premature to judge
-d8c483e	74048a9	docs: record the board CNN state and flag a now-suspect earlier finding
-1f72f1b	1247a02	docs: record three silent bugs that made the board CNN look untrainable
-e396650	07a3f7e	fix: normalise the move-progress plane instead of feeding it at 255x scale
-d0ab802	1f81e98	fix: let the loss balancer accept new loss terms without crashing
-0635ea7	d300de9	fix: train the set pooling head that evaluation depends on
-b8f0220	b08702b	feat: add board CNN as an optional stacker component
-78e9684	772be0d	docs: correct the board CNN feasibility assessment
-0363bb4	9c1fb4a	fix: default dataloader workers to zero so board CNN training can progress
-796e15e	ef8367f	docs: explain why internal scores understate production by about 0.0035
-c82cb8c	41a2e66	feat: ship per-move position-judgement quality as a fifth sequence variant
-8046fe6	41f44cd	exp: seq_quality scores 0.5923 (增益低於門檻)
-894ffcc	335bbbd	chore: record experiment logs and loop state
-732f673	79ad868	docs: record that shape transitions add nothing over shape frequencies
-a16c572	f750353	feat: add per-move position-judgement quality features
-c178459	bb197f7	exp: metric_trans scores 0.9630 (無增益)
-e9dfd6d	6a08af3	feat: add move-shape transition features and queue the identity experiment
-4c13a9f	3a3efbd	docs: record that move-shape lifts player identification most where it was weakest
-212b3fa	3b1fc7a	feat: use move-shape features for player identification
-b452901	f755e6b	exp: seq_gru scores 0.5899 (增益低於門檻)
-1a00026	dba13e8	exp: metric_shape scores 0.9653 (採用)
-e87fc20	b233ffe	docs: generalise why every per-subgroup specialisation fails
-4243036	748c743	chore: retire the question-level shape experiment with its reason
-feefd12	bbed000	docs: explain why shape helps the sequence model but not the game MLP
-274a47e	684721d	exp: mlp_shape scores 0.5900 (增益低於門檻)
-bba015d	747dba6	fix: measure per-track baselines instead of silently skipping them
-ba3ea59	83d4e8b	exp: seq_rankloss scores 0.5860 (增益低於門檻)
-1b6ecf6	c3bbba1	docs: document the cross-task weight tradeoff in the flag help
-2621f20	da488de	docs: warn that even running the test suite can evict training tensors
-250a021	6acf76b	test: unit-test the cross-task safety decision
-f3b31c8	2bbfae8	docs: note that official sources do not document test set construction
-926e85f	3ba28f5	docs: correct the disproven sequence-window item and re-rank the backlog
-5cb8534	1b5fa40	chore: make the four-variant ensemble the default gate baseline
-1b6cd55	b341ae4	docs: update scores after shipping the shape variant
-f1294d9	ad7357e	feat: ship move-shape sequence variant and cross-task evidence transfer path
-4f99127	e9fb72f	exp: seq_shape scores 0.5842 (採用)
-0ce2fbd	a782b30	docs: record how memory oversubscription silently slows training fivefold
-9f1a7af	71d0f7a	refactor: make prediction components reusable for augmented evidence
-a1e1e27	a8e3c8e	feat: measure cross-task evidence transfer and its failure mode
-0e23394	7ed8344	docs: record competition 1 per-composition scores under the shipped configuration
-40f7ffc	a7959d7	feat: make the auto loop track-aware so it can improve competition 1 too
-422c566	a4da24d	fix: let the metric trainer accept feature stores of differing widths
-ce17cc1	be28937	docs: add a where-to-go-next summary to the ledger header
-3b8eee9	a03b496	feat: derive each sequence checkpoint's input views from its own recorded args
-5a1c106	7b3591f	feat: add measurement of how question size affects rank score up to 100 games
-c08b85d	140dff4	docs: add the cross-task link check to the submission-day steps
-cf14479	d373a1e	feat: add detector for whether both subtasks share the same 400 players
-c342568	726f639	feat: average gate scores over multiple calibration splits for tighter estimates
-1049be2	e99caa9	docs: disprove the drop-base hypothesis with higher-power paired testing
-0453a67	dad5b1a	docs: scan ensemble subsets, keep current, flag base as a single testable hypothesis
-cacb33d	1038888	docs: rule out 3x3 pattern histograms as redundant with shape features
-9f68b67	6554a72	chore: queue question-level shape experiment
-73da45d	b92fc9e	docs: correct the prerequisite artifact list and add a rented-GPU plan
-d25f437	369db78	feat: aggregate move-shape statistics into game-level features
-4778b1e	3c4d999	docs: ensemble is saturated on current features, even a different architecture adds nothing
-7c14edd	7861d3d	fix: append gate candidates to the live ensemble instead of replacing it
-23ccb55	de6de54	docs: record shape-feature probe and sequence inference speedup
-9a12b9c	a4c8f34	perf: batch sequence inference across games instead of per question
-e44a180	871ceec	docs: surface the measured bottleneck in the readme
-6d8aca9	56df313	feat: add rank-assisted player matching experiment for competition 1
-18156c8	e0ded45	exp: seq_narrow_deep scores 0.5686 (無增益)
-7812d60	b5bbc96	feat: add greedy forward ensemble selection with worst-case stopping
-d99c76e	4c08bea	feat: add thread control and document the ensemble gate redesign
-64d5efb	e75bd8f	feat: gate candidates against the live ensemble and self-invalidate stale baselines
-132e907	7b85016	feat: make calibration rank prior configurable via --calib-prior
-eadda23	efc2e8f	feat: add pairwise ranking loss and record prior-robustness of model selection
-9e8416d	03485f7	docs: map where the score is lost and close off decoder work
-3bf5e6a	1638448	test: cover EM prior estimator and queue shape/GRU diversity experiments
-c568c9b	bd4432a	docs: measure rank-prior mismatch exposure and rule out EM prior estimation
-94775da	1b6b23b	feat: add move-shape sequence features and bidirectional GRU encoder
-5f4b523	b1ba390	exp: seq_240_fair scores 0.5706 (無增益)
-aa85d81	81bf800	exp: mlp_wider scores 0.5684 (無增益)
-aef33ec	770500a	feat: ensemble sequence variants as separate stacker components
-cda6660	3a94327	docs: record first auto loop batch hitting the scaling ceiling
-cc53d96	58908cf	exp: seq_wider scores 0.5764 (增益低於門檻)
-3c92a49	2d487f1	exp: seq_240moves scores 0.5660 (無增益)
-9bba2d5	bc2872d	docs: update scores under official spec and tightened sinkhorn
-2ae573f	efcd32f	feat: tighten sinkhorn eps now that bijection is officially confirmed
-731c56a	a2a9854	docs: measure impact of correcting question size distribution
-76d5768	f2e5f3d	exp: seq_full_data scores 0.5756 (增益低於門檻)
-e276ccf	c90e370	exp: mlp_8seed scores 0.5725 (增益低於門檻)
-cde5140	b77814a	docs: record confirmed official schedule rules and test set spec
-36c9335	758ae15	fix: use official question size distribution in benchmarks
-716b0d2	57f87ad	docs: refute cross task latent features for rank prediction
-18a1030	883f37b	docs: quantify in sample inflation for thresholds and stacker
-b980ebe	28464b3	feat: schedule by device so mps and cpu jobs run truly in parallel
-b980fa1	ee582f7	perf: keep sequence tensors in float16 and add parallel scheduling
-8b17b8f	d0edf48	feat: parameterise sequence window and queue longer window experiment
-968c6c1	e35d29c	docs: report the shipped stacker score rather than the exploratory one
-3f7b8f8	36e600e	fix: align gate criterion and production score with shipped pipeline
-11e5763	f5c9545	exp: seq_5seed scores 0.5649 (增益低於門檻)
-8bda62f	83ab5bd	docs: correct rank loss diagnosis with adjacent pair separability
-38cf745	42b5e9b	docs: refute router direction with oracle gap analysis
-5ad7898	89af311	docs: update rank score after stacker ships
-f171e2f	e707694	docs: record learned stacker lifting rank prediction
-f9d124b	962e678	feat: add learned stacker to replace fixed weight blending
-522760a	6a1edf3	docs: locate rank loss at the kyu dan boundary and refute quantile fix
-35a6b77	de8980c	feat: add oof cache and autonomous experiment loop
-11f551a	b5d4001	feat: add self invalidating cache for question level posteriors
-7a52f11	dbd1564	docs: measure pca dimensionality reduction as monotonically harmful
-577baf8	00ef74f	docs: record dual view sequence model as the largest rank gain
-28a6046	3d1fc71	feat: use dual view sequence model with tuned blend weight
-9c03555	317f49b	feat: support opponent perspective sequences in store and training
-822b921	109caa1	docs: update ledger with sequence model shipped
-42ea282	5267207	feat: blend move sequence model into rank prediction pipeline
-177cd54	a2cbb9f	docs: mark opponent pipeline shipped and sequence model in progress
-9b03a41	fd26242	docs: update rank scores after opponent pipeline becomes default
-43bc6b1	8b95c69	feat: default to opponent perspective pipeline for rank prediction
-1fe5b42	c5a5440	feat: add sequence model training script for rank prediction
-2a6ff06	6dd9189	feat: add parallel builder for move sequence store
-b771520	268320c	feat: add per move sequence features preserving temporal structure
-c4427c7	cd3dba4	docs: record move sequence model beating handcrafted features
-1d458a2	1ef9b44	docs: correct shipped sinkhorn score and record competition one negative
-6bf217a	8224959	feat: allow extra feature stores in metric learning
-5fe262e	5304f95	docs: document opponent perspective discovery in readme
-8fcd57d	893555b	docs: confirm opponent features at scale with eight seed comparison
-04eb3f2	f5fdb12	feat: support opponent perspective features across training and inference
-a89fb64	3ad9f52	feat: add multi store wrapper for concatenating feature sets
-fe98646	436c725	docs: record opponent perspective features as a new signal source
-43a410a	ee4e5b7	feat: add opponent perspective option to feature store builder
-c0a4a5c	e6e0289	docs: record sinkhorn assignment lifting player identification
-b82144f	f9a069f	feat: add sinkhorn global assignment for player identification
-fb7ad78	d16d494	docs: link the experiment ledger from readme
-820eec7	805acf0	docs: add running experiment ledger with all measured results
-43c8427	8a2cdb6	docs: record blend weight and rank model sweep
-f0ef2c1	eb5dae1	feat: default to the verified best rank model in prediction
-52de384	789a105	docs: add competition day runbook
-6728492	5c3102f	docs: identify board cnn as the complementary direction for gpu
-eaa9ea7	f16db96	fix: save and restore full gonet config instead of guessing
-9b5416e	3e85a8c	fix: restore mode and add no grad in cnn rank evaluation
-ab0197c	32f9f22	docs: show multi backend gbdt ensemble is a net negative here
-f932665	56566b6	fix: parse player colour strictly instead of defaulting to white
-b23a7e4	886619e	docs: update rank score and document decoder transfer comparison
-331526f	110e172	fix: tolerate unloadable gbdt backends instead of crashing
-60f5d4e	b984fc0	fix: restore model mode and disable grad in embed features
-44c735f	77796cc	fix: restore model train eval mode in question posteriors
-2df22a6	5813614	fix: replace nelder mead threshold search with exact dynamic programming
-98d4281	2a9ddd8	docs: record question level blending pushing rank above baseline
-bf1b0c0	c6bb288	feat: blend question level model into prediction pipeline
-45195d8	b090c8c	fix: use asymmetric case in geometric blend test
-986d216	3519b29	feat: add question level modelling and posterior blending
-6001172	5b89110	fix: sort player ids so simulated benchmarks reproduce across processes
-1861655	824d5e4	docs: verify player identification across 25 independent evaluations
-5a9569b	4335899	docs: correct overclaimed rank score with multi seed evaluation
-39fd6a4	6ab20e5	docs: rewrite kaggle notebook around feature based pipeline
-75bd654	ec91c93	feat: use rank mlp ensemble in prediction pipeline
-6d69fa4	92e1f55	feat: add rank mlp ensemble script
-baf36dd	44a1082	feat: add territory and invasion rate features for dan discrimination
-68c7c9f	2b2c1b5	feat: add opening transition and region visit features
-9d3f33b	7f04c6e	feat: add ordered opening sequence features
-3ca16ae	89c6a63	feat: drop global position features from identity metric learning
-a4f3792	daec2a7	docs: record metric learning breakthrough in readme
-f86fc07	6cfe49c	feat: add metric learning on handcrafted features for player identification
-97e1164	ab3fcfa	fix: perturb single channel in board transformer mixing test
-12e8aaf	50a5fb4	feat: add restnet board transformer blocks to trunk
-b24eea5	c74b181	feat: add unified experiment log with git traceability
-b2fa779	813ab99	feat: apply stage two reranker in prediction pipeline
-5f6f020	580b681	feat: retrain stage two reranker on all compositions
-18acc6b	d061889	feat: add ordinal threshold decoding as default for rank prediction
-fa3cffc	fc9b417	feat: add stage two reranker with mixed composition training
-a39c9cd	0cc102e	feat: add blending script and notebook training both competitions
-e186fb5	967ca3d	feat: add set transformer pooling katago global pool bias and gbdt ensemble
-c2ef142	16826a7	docs: link kaggle notebook from readme
-b5d7225	4813acd	feat: add kaggle training notebook and time budget option
-94597b7	383fa95	docs: link colab guide from readme
-f49cdc8	682c697	feat: add resume support and colab training guide
-426ae83	2490a7e	docs: fold dataset spec into readme and drop upstream snapshot
-e9cf54c	f481c8a	fix: train rank model on all games by default in prediction script
-16f7b93	a97b6ec	fix: sample player games randomly in feature signal report
-51b7242	a035c95	docs: record measured impact of quality features on both subtasks
-1424890	1324966	feat: add shape quality auxiliary head to multitask network
-664e1dc	337d408	docs: document empty triangle as strongest rank signal in readme
-3be1c69	70c7d1e	feat: add per feature signal diagnostic report
-e48696c	24b2471	feat: add empty triangle shape feature as strongest rank signal
-367ffcb	abdde73	feat: add engine free move quality features for rank prediction
-ac92c9c	5146003	docs: update rank model ceiling with final scaling results
-50e3424	2e4d0b5	docs: document asymmetry between the two subtasks in readme
-180f7bb	ca1aa5c	docs: add measured findings and refuted techniques to readme
-a690873	19f828b	feat: add rank prior evaluation script with batched posterior prediction
-e65f716	72c4499	perf: cache player row index to speed up repeated pool construction
-9a27ab0	0743dec	fix: flush stdout in long running scripts for background visibility
-6f6ef03	4ac4048	fix: raise default evaluation question count to reduce checkpoint noise
-7b564dd	8282eef	feat: add automatic loss scale balancing to multitask training
-cea52fa	23602aa	docs: record multiprocessing start method tradeoff in feature module
-7a8f88d	0509019	fix: use player answer namespace when scoring identification dry run
-71d4e84	daacb7d	perf: parallelise feature extraction in prediction pipeline
-072b8b2	0e31107	fix: separate answer namespaces for the two subtasks in mock testset
-314e9c6	7160ffd	test: add question file parsing tests for prediction pipeline
-7eff44f	a49e245	feat: add end to end prediction script with mock testset dry run
-278a1ab	959d8f4	fix: sample validation rows randomly and bulk load sgf in mock testset
-ad67396	58d5e63	perf: batch question level prediction in rank baseline
-596bdd2	ccc9b49	test: lock in per-game normalisation order for player templates
-c7e14ea	a6219ed	feat: add player retrieval postprocessing evaluation script
-b1f2792	06fe6d3	feat: add k-reciprocal reranking and query expansion
-f01dbdc	6f84c08	chore: add pyproject and remove sys path boilerplate from tests
-9848efc	27620e7	docs: expand readme with design principles and module map
-3479f30	4b13d40	feat: add multitask training script with question-level checkpoint selection
-47430a2	da09a0e	feat: add pytorch datasets with pk sampling and dihedral augmentation
-220a24d	ddc64c3	feat: add multitask network and score-aligned loss functions
-f226c1a	fd9f9dd	feat: add board plane representation with liberty and canonical color planes
-371601a	2a752ed	feat: add submission builders with official format validation
-4830df5	10c31f0	fix: use fork start method to avoid worker pool hang on macos
-323ae7b	89df8b5	feat: add handcrafted baselines and offline evaluation runner
-08770ac	47acf4d	feat: add handcrafted feature extractor with life-and-death statistics
-fd1bce6	3904fb0	feat: add player-disjoint split and question-level benchmark builders
-ca1bc2d	613bd66	feat: add sgf parser and go board with capture and liberty planes
-421b7b0	00db082	feat: add official scoring functions and expected-score decoding
-4941795	a1fcfe3	chore: remove comments from gitignore
-15e66b4	8c42790	chore: add validation experiment scripts and gitignore rules
+# 實驗日誌與配方引用過的舊 commit 雜湊 → 目前的雜湊。
+# 版控歷史改寫過兩次：作者名稱統一（2026-09-29）、移除不應公開的資料檔（2026-11-25）。
+old	current	subject
+cba14fa	33b2797	feat: train the player metric model for 6000 steps
+aa75631	5b69dd3	feat: widen the player metric model to a 1024-unit hidden layer
+31dcaf2	02d7e70	refactor: keep two sequence variants and derive their stores from each checkpoint
+8a63f5c	443f12a	feat: allow extra board models as ensemble members and seed board training
+88ce884	8896f41	docs: update headline scores
+5afa45b	4f6b4b2	feat: ship the eight-seed metric ensemble and add weight EMA to board training
+68bf7e0	fc56812	fix: accept both official naming schemes for the test files
+20194de	fd26b52	perf: gather and standardise features in chunks to cut peak memory
+140d52a	79e1d1e	feat: keep per-seed scores in the player evaluation for paired comparisons
+bd39daa	3b70d4c	feat: add optional symmetry test-time augmentation to the board component
+e39c1eb	4eea086	perf: share one memory-mapped SGF store across processes and loader workers
+d56a1c7	baefc00	fix: load the shipped board model from a frozen copy instead of the training output
+f5e06aa	4c68c62	chore: align the gate baseline with the shipped ensemble
+4fb87dc	ec16fd7	feat: add the board CNN to the production ensemble
+98567ee	bdb53df	fix: give the board component the same set members in eval as in training
+8d4d4b6	1eb1d5f	fix: parse the colour field strictly when building board planes
+ddc9320	6784169	chore: install the package instead of patching sys.path in every script
+7f2716b	51f8196	fix: escape percent signs in argparse help so --help works
+56c9813	e03eb59	refactor: move rank model definitions into the library and guard the layering
+8a45203	43f93f8	chore: keep experiment records and run artifacts out of the public repo
+a77f53f	8e4a4d0	feat: record machine time for every experiment and report gain per hour
+d601040	f89ef37	chore: keep the early exploration scripts in scripts with status notes
+f954a26	b88dca8	chore: retire early exploration scripts into scripts/legacy with provenance notes
+45463a4	ff9ecb3	exp: board CNN gives 0.0080 once checkpoints are picked by rank correlation
+812455d	62c5df4	fix: select board CNN checkpoints by rank correlation not decoded score
+30f45a8	1fb4392	exp: board CNN adds 0.0020 to the ensemble while still badly undertrained
+5e369e0	6bad391	docs: judge a component by rank correlation, not its standalone decoded score
+e44ec9f	4c917df	fix: use each board snapshot as its own set member in train and eval
+f6c78cd	81bb082	feat: add a dependency check mode so missing artifacts fail loudly
+8edb54d	f4819c5	docs: note that mid-training CNN scores are premature to judge
+d8c483e	82479b0	docs: record the board CNN state and flag a now-suspect earlier finding
+1f72f1b	dc7180b	docs: record three silent bugs that made the board CNN look untrainable
+e396650	4956bf2	fix: normalise the move-progress plane instead of feeding it at 255x scale
+d0ab802	7870ef8	fix: let the loss balancer accept new loss terms without crashing
+0635ea7	fcb13e7	fix: train the set pooling head that evaluation depends on
+b8f0220	c4c76c7	feat: add board CNN as an optional stacker component
+78e9684	3d4e9ea	docs: correct the board CNN feasibility assessment
+0363bb4	828a4a8	fix: default dataloader workers to zero so board CNN training can progress
+796e15e	b340a67	docs: explain why internal scores understate production by about 0.0035
+c82cb8c	481c681	feat: ship per-move position-judgement quality as a fifth sequence variant
+8046fe6	7bb8ef3	exp: seq_quality scores 0.5923 (增益低於門檻)
+894ffcc	5577d02	chore: record experiment logs and loop state
+732f673	96738c4	docs: record that shape transitions add nothing over shape frequencies
+a16c572	d25503b	feat: add per-move position-judgement quality features
+c178459	aff4dd5	exp: metric_trans scores 0.9630 (無增益)
+e9dfd6d	5223e4e	feat: add move-shape transition features and queue the identity experiment
+4c13a9f	9889a8b	docs: record that move-shape lifts player identification most where it was weakest
+212b3fa	f9cfb6b	feat: use move-shape features for player identification
+b452901	8f0ed23	exp: seq_gru scores 0.5899 (增益低於門檻)
+1a00026	0b35731	exp: metric_shape scores 0.9653 (採用)
+e87fc20	cb717de	docs: generalise why every per-subgroup specialisation fails
+4243036	bbc4d29	chore: retire the question-level shape experiment with its reason
+feefd12	3a5eaeb	docs: explain why shape helps the sequence model but not the game MLP
+274a47e	0d5f4bc	exp: mlp_shape scores 0.5900 (增益低於門檻)
+bba015d	725fc7e	fix: measure per-track baselines instead of silently skipping them
+ba3ea59	2fb43ca	exp: seq_rankloss scores 0.5860 (增益低於門檻)
+1b6ecf6	0668033	docs: document the cross-task weight tradeoff in the flag help
+2621f20	0978e38	docs: warn that even running the test suite can evict training tensors
+250a021	e71c3c4	test: unit-test the cross-task safety decision
+f3b31c8	4c8f9e7	docs: note that official sources do not document test set construction
+926e85f	895937d	docs: correct the disproven sequence-window item and re-rank the backlog
+5cb8534	14cd772	chore: make the four-variant ensemble the default gate baseline
+1b6cd55	9d80eb6	docs: update scores after shipping the shape variant
+f1294d9	97c7273	feat: ship move-shape sequence variant and cross-task evidence transfer path
+4f99127	2945185	exp: seq_shape scores 0.5842 (採用)
+0ce2fbd	fdc71d4	docs: record how memory oversubscription silently slows training fivefold
+9f1a7af	a413542	refactor: make prediction components reusable for augmented evidence
+a1e1e27	b5d3189	feat: measure cross-task evidence transfer and its failure mode
+0e23394	bb8ba3a	docs: record competition 1 per-composition scores under the shipped configuration
+40f7ffc	e5037fb	feat: make the auto loop track-aware so it can improve competition 1 too
+422c566	98dc0ab	fix: let the metric trainer accept feature stores of differing widths
+ce17cc1	4842b75	docs: add a where-to-go-next summary to the ledger header
+3b8eee9	991d689	feat: derive each sequence checkpoint's input views from its own recorded args
+5a1c106	a772aed	feat: add measurement of how question size affects rank score up to 100 games
+c08b85d	6c6f16d	docs: add the cross-task link check to the submission-day steps
+cf14479	dd370d5	feat: add detector for whether both subtasks share the same 400 players
+c342568	26e4ee0	feat: average gate scores over multiple calibration splits for tighter estimates
+1049be2	abc7553	docs: disprove the drop-base hypothesis with higher-power paired testing
+0453a67	0f955b9	docs: scan ensemble subsets, keep current, flag base as a single testable hypothesis
+cacb33d	2cd767e	docs: rule out 3x3 pattern histograms as redundant with shape features
+9f68b67	322863a	chore: queue question-level shape experiment
+73da45d	f61e40a	docs: correct the prerequisite artifact list and add a rented-GPU plan
+d25f437	7e5f7e0	feat: aggregate move-shape statistics into game-level features
+4778b1e	f2a99ad	docs: ensemble is saturated on current features, even a different architecture adds nothing
+7c14edd	108ffa9	fix: append gate candidates to the live ensemble instead of replacing it
+23ccb55	1cf5c06	docs: record shape-feature probe and sequence inference speedup
+9a12b9c	49b6691	perf: batch sequence inference across games instead of per question
+e44a180	88c3177	docs: surface the measured bottleneck in the readme
+6d8aca9	cf9a6b5	feat: add rank-assisted player matching experiment for competition 1
+18156c8	6941d36	exp: seq_narrow_deep scores 0.5686 (無增益)
+7812d60	fe4ff48	feat: add greedy forward ensemble selection with worst-case stopping
+d99c76e	f9f3a3d	feat: add thread control and document the ensemble gate redesign
+64d5efb	665d7fe	feat: gate candidates against the live ensemble and self-invalidate stale baselines
+132e907	ac08807	feat: make calibration rank prior configurable via --calib-prior
+eadda23	c3f07ef	feat: add pairwise ranking loss and record prior-robustness of model selection
+9e8416d	bf3342e	docs: map where the score is lost and close off decoder work
+3bf5e6a	d057a31	test: cover EM prior estimator and queue shape/GRU diversity experiments
+c568c9b	67a2781	docs: measure rank-prior mismatch exposure and rule out EM prior estimation
+94775da	59c12f6	feat: add move-shape sequence features and bidirectional GRU encoder
+5f4b523	cfdc751	exp: seq_240_fair scores 0.5706 (無增益)
+aa85d81	5eacd1d	exp: mlp_wider scores 0.5684 (無增益)
+aef33ec	c45b1f2	feat: ensemble sequence variants as separate stacker components
+cda6660	532aa24	docs: record first auto loop batch hitting the scaling ceiling
+cc53d96	696858d	exp: seq_wider scores 0.5764 (增益低於門檻)
+3c92a49	3f6c341	exp: seq_240moves scores 0.5660 (無增益)
+9bba2d5	371cbb4	docs: update scores under official spec and tightened sinkhorn
+2ae573f	1f5e08e	feat: tighten sinkhorn eps now that bijection is officially confirmed
+731c56a	7aa8493	docs: measure impact of correcting question size distribution
+76d5768	bdfd6ca	exp: seq_full_data scores 0.5756 (增益低於門檻)
+e276ccf	1a08071	exp: mlp_8seed scores 0.5725 (增益低於門檻)
+cde5140	891a817	docs: record confirmed official schedule rules and test set spec
+36c9335	c65d862	fix: use official question size distribution in benchmarks
+716b0d2	a4d0003	docs: refute cross task latent features for rank prediction
+18a1030	84059bf	docs: quantify in sample inflation for thresholds and stacker
+b980ebe	35fa9a0	feat: schedule by device so mps and cpu jobs run truly in parallel
+b980fa1	ef75555	perf: keep sequence tensors in float16 and add parallel scheduling
+8b17b8f	d767486	feat: parameterise sequence window and queue longer window experiment
+968c6c1	a9bc02d	docs: report the shipped stacker score rather than the exploratory one
+3f7b8f8	a6e1f35	fix: align gate criterion and production score with shipped pipeline
+11e5763	90790dc	exp: seq_5seed scores 0.5649 (增益低於門檻)
+8bda62f	bd5d206	docs: correct rank loss diagnosis with adjacent pair separability
+38cf745	df494cb	docs: refute router direction with oracle gap analysis
+5ad7898	a3e37af	docs: update rank score after stacker ships
+f171e2f	82d3687	docs: record learned stacker lifting rank prediction
+f9d124b	d55a0c5	feat: add learned stacker to replace fixed weight blending
+522760a	7e12de3	docs: locate rank loss at the kyu dan boundary and refute quantile fix
+35a6b77	7f62a11	feat: add oof cache and autonomous experiment loop
+11f551a	11e46b1	feat: add self invalidating cache for question level posteriors
+7a52f11	623c177	docs: measure pca dimensionality reduction as monotonically harmful
+577baf8	0f20ccd	docs: record dual view sequence model as the largest rank gain
+28a6046	4023558	feat: use dual view sequence model with tuned blend weight
+9c03555	63651ec	feat: support opponent perspective sequences in store and training
+822b921	9e80bd3	docs: update ledger with sequence model shipped
+42ea282	3dfe06e	feat: blend move sequence model into rank prediction pipeline
+177cd54	ab12e8b	docs: mark opponent pipeline shipped and sequence model in progress
+9b03a41	f1eaf21	docs: update rank scores after opponent pipeline becomes default
+43bc6b1	30db63f	feat: default to opponent perspective pipeline for rank prediction
+1fe5b42	5991e42	feat: add sequence model training script for rank prediction
+2a6ff06	86ea6c0	feat: add parallel builder for move sequence store
+b771520	4e0647d	feat: add per move sequence features preserving temporal structure
+c4427c7	c171300	docs: record move sequence model beating handcrafted features
+1d458a2	486bd5e	docs: correct shipped sinkhorn score and record competition one negative
+6bf217a	a731abc	feat: allow extra feature stores in metric learning
+5fe262e	700acfb	docs: document opponent perspective discovery in readme
+8fcd57d	6c29c25	docs: confirm opponent features at scale with eight seed comparison
+04eb3f2	47b2258	feat: support opponent perspective features across training and inference
+a89fb64	115d309	feat: add multi store wrapper for concatenating feature sets
+fe98646	938062e	docs: record opponent perspective features as a new signal source
+43a410a	6e76085	feat: add opponent perspective option to feature store builder
+c0a4a5c	1bd9697	docs: record sinkhorn assignment lifting player identification
+b82144f	ebdc989	feat: add sinkhorn global assignment for player identification
+fb7ad78	a8d3e28	docs: link the experiment ledger from readme
+820eec7	518df4d	docs: add running experiment ledger with all measured results
+43c8427	42ba1f9	docs: record blend weight and rank model sweep
+f0ef2c1	ce48756	feat: default to the verified best rank model in prediction
+52de384	e61cf9e	docs: add competition day runbook
+6728492	ec9001c	docs: identify board cnn as the complementary direction for gpu
+eaa9ea7	45cb8b7	fix: save and restore full gonet config instead of guessing
+9b5416e	e1c2f82	fix: restore mode and add no grad in cnn rank evaluation
+ab0197c	6d0c7e6	docs: show multi backend gbdt ensemble is a net negative here
+f932665	8c66fc9	fix: parse player colour strictly instead of defaulting to white
+b23a7e4	54316ee	docs: update rank score and document decoder transfer comparison
+331526f	c7b2146	fix: tolerate unloadable gbdt backends instead of crashing
+60f5d4e	79788b3	fix: restore model mode and disable grad in embed features
+44c735f	1081ef2	fix: restore model train eval mode in question posteriors
+2df22a6	0a63b68	fix: replace nelder mead threshold search with exact dynamic programming
+98d4281	b36178e	docs: record question level blending pushing rank above baseline
+bf1b0c0	f93f1af	feat: blend question level model into prediction pipeline
+45195d8	0fe03ff	fix: use asymmetric case in geometric blend test
+986d216	0748249	feat: add question level modelling and posterior blending
+6001172	89097ae	fix: sort player ids so simulated benchmarks reproduce across processes
+1861655	ef630ad	docs: verify player identification across 25 independent evaluations
+5a9569b	9b4a169	docs: correct overclaimed rank score with multi seed evaluation
+39fd6a4	8b84bbe	docs: rewrite kaggle notebook around feature based pipeline
+75bd654	a155f7c	feat: use rank mlp ensemble in prediction pipeline
+6d69fa4	5dd5a72	feat: add rank mlp ensemble script
+baf36dd	aeecc4b	feat: add territory and invasion rate features for dan discrimination
+68c7c9f	71632f1	feat: add opening transition and region visit features
+9d3f33b	5b000bb	feat: add ordered opening sequence features
+3ca16ae	d19ec4b	feat: drop global position features from identity metric learning
+a4f3792	292a6ec	docs: record metric learning breakthrough in readme
+f86fc07	8a8383d	feat: add metric learning on handcrafted features for player identification
+97e1164	226476d	fix: perturb single channel in board transformer mixing test
+12e8aaf	62190e0	feat: add restnet board transformer blocks to trunk
+b24eea5	f3b687f	feat: add unified experiment log with git traceability
+b2fa779	cf472c0	feat: apply stage two reranker in prediction pipeline
+5f6f020	ff985f8	feat: retrain stage two reranker on all compositions
+18acc6b	3c27ce0	feat: add ordinal threshold decoding as default for rank prediction
+fa3cffc	5e6d57a	feat: add stage two reranker with mixed composition training
+a39c9cd	be8b150	feat: add blending script and notebook training both competitions
+e186fb5	c54d210	feat: add set transformer pooling katago global pool bias and gbdt ensemble
+c2ef142	b965746	docs: link kaggle notebook from readme
+b5d7225	fb2e528	feat: add kaggle training notebook and time budget option
+94597b7	ef9e31c	docs: link colab guide from readme
+f49cdc8	874a4f1	feat: add resume support and colab training guide
+426ae83	254f968	docs: fold dataset spec into readme and drop upstream snapshot
+e9cf54c	f94c6dc	fix: train rank model on all games by default in prediction script
+16f7b93	1009417	fix: sample player games randomly in feature signal report
+51b7242	a45cc3f	docs: record measured impact of quality features on both subtasks
+1424890	dfa3c7e	feat: add shape quality auxiliary head to multitask network
+664e1dc	0535120	docs: document empty triangle as strongest rank signal in readme
+3be1c69	9f01f27	feat: add per feature signal diagnostic report
+e48696c	388c400	feat: add empty triangle shape feature as strongest rank signal
+367ffcb	e0186d0	feat: add engine free move quality features for rank prediction
+ac92c9c	7a2ca7d	docs: update rank model ceiling with final scaling results
+50e3424	0d4e35f	docs: document asymmetry between the two subtasks in readme
+180f7bb	e67c651	docs: add measured findings and refuted techniques to readme
+a690873	b80b25c	feat: add rank prior evaluation script with batched posterior prediction
+e65f716	2b52463	perf: cache player row index to speed up repeated pool construction
+9a27ab0	daae1d5	fix: flush stdout in long running scripts for background visibility
+6f6ef03	3a8f05c	fix: raise default evaluation question count to reduce checkpoint noise
+7b564dd	0533a88	feat: add automatic loss scale balancing to multitask training
+cea52fa	a59358e	docs: record multiprocessing start method tradeoff in feature module
+7a8f88d	c16ceaa	fix: use player answer namespace when scoring identification dry run
+71d4e84	9254b7b	perf: parallelise feature extraction in prediction pipeline
+072b8b2	1a171ac	fix: separate answer namespaces for the two subtasks in mock testset
+314e9c6	66e788d	test: add question file parsing tests for prediction pipeline
+7eff44f	4f10cff	feat: add end to end prediction script with mock testset dry run
+278a1ab	75bee43	fix: sample validation rows randomly and bulk load sgf in mock testset
+ad67396	bcd253b	perf: batch question level prediction in rank baseline
+596bdd2	33a6ed2	test: lock in per-game normalisation order for player templates
+c7e14ea	0b6b007	feat: add player retrieval postprocessing evaluation script
+b1f2792	ea458b3	feat: add k-reciprocal reranking and query expansion
+f01dbdc	a87c9a7	chore: add pyproject and remove sys path boilerplate from tests
+9848efc	b302d49	docs: expand readme with design principles and module map
+3479f30	9a4bd92	feat: add multitask training script with question-level checkpoint selection
+47430a2	21219cc	feat: add pytorch datasets with pk sampling and dihedral augmentation
+220a24d	1875352	feat: add multitask network and score-aligned loss functions
+f226c1a	63c881b	feat: add board plane representation with liberty and canonical color planes
+371601a	d343801	feat: add submission builders with official format validation
+4830df5	8bda929	fix: use fork start method to avoid worker pool hang on macos
+323ae7b	e39f464	feat: add handcrafted baselines and offline evaluation runner
+08770ac	90ef81b	feat: add handcrafted feature extractor with life-and-death statistics
+fd1bce6	7e369da	feat: add player-disjoint split and question-level benchmark builders
+ca1bc2d	5cfdf81	feat: add sgf parser and go board with capture and liberty planes
+421b7b0	fc9d866	feat: add official scoring functions and expected-score decoding
+4941795	77ab771	chore: remove comments from gitignore
+15e66b4	077961d	chore: add validation experiment scripts and gitignore rules
 b8bfb68	957c356	INIT
+00818b9	508dc7b	feat: find official test files in the tests_rank and tests_player folders
+00db082	fc9d866	feat: add official scoring functions and expected-score decoding
+00ef74f	0f20ccd	docs: record dual view sequence model as the largest rank gain
+00fdbf9	bc5fce7	feat: describe the v2 pool-classifier player variant
+03485f7	bf3342e	docs: map where the score is lost and close off decoder work
+0509019	c16ceaa	fix: use player answer namespace when scoring identification dry run
+051e348	fd26b52	perf: gather and standardise features in chunks to cut peak memory
+06fe6d3	ea458b3	feat: add k-reciprocal reranking and query expansion
+0743dec	daae1d5	fix: flush stdout in long running scripts for background visibility
+07a3f7e	4956bf2	fix: normalise the move-progress plane instead of feeding it at 255x scale
+0811d72	443f12a	feat: allow extra board models as ensemble members and seed board training
+082ce94	fc56812	fix: accept both official naming schemes for the test files
+0b83c91	8e17ccc	feat: pin the player set when comparing HumanSL settings
+0cc102e	be8b150	feat: add blending script and notebook training both competitions
+0e31107	1a171ac	fix: separate answer namespaces for the two subtasks in mock testset
+1038888	2cd767e	docs: rule out 3x3 pattern histograms as redundant with shape features
+109caa1	9e80bd3	docs: update ledger with sequence model shipped
+10c31f0	8bda929	fix: use fork start method to avoid worker pool hang on macos
+110e172	c7b2146	fix: tolerate unloadable gbdt backends instead of crashing
+113efcd	d7a1a01	feat: describe the three-model sequence ensemble variant
+1247a02	dc7180b	docs: record three silent bugs that made the board CNN look untrainable
+1324966	dfa3c7e	feat: add shape quality auxiliary head to multitask network
+140dff4	6c6f16d	docs: add the cross-task link check to the submission-day steps
+14bf7ae	1eb1d5f	fix: parse the colour field strictly when building board planes
+1638448	d057a31	test: cover EM prior estimator and queue shape/GRU diversity experiments
+16826a7	b965746	docs: link kaggle notebook from readme
+19f828b	b80b25c	feat: add rank prior evaluation script with batched posterior prediction
+1b3f41c	d84e4e2	feat: add 7x7 patch sequences and memmap training with prefetching
+1b5fa40	14cd772	chore: make the four-variant ensemble the default gate baseline
+1b6b23b	59c12f6	feat: add move-shape sequence features and bidirectional GRU encoder
+1b75f80	b8e7d68	chore: add recipe for submission R007
+1bc4cf0	18b1b6c	feat: stop sequence identity training after the validation peak
+1c5fa33	4eea086	perf: share one memory-mapped SGF store across processes and loader workers
+1ef9b44	486bd5e	docs: correct shipped sinkhorn score and record competition one negative
+1f33347	5f5a56e	feat: store rank and player submissions in separate folders
+1f4a1bd	0904430	feat: score the opponent's moves with HumanSL as a separate store entry
+1f650f3	142138c	feat: add an opt-in HumanSL component to predict.py with pool calibration
+1f81e98	7870ef8	fix: let the loss balancer accept new loss terms without crashing
+1fcc72d	85cb11f	feat: describe the opponent HumanSL variant in the submission registry
+23602aa	a59358e	docs: record multiprocessing start method tradeoff in feature module
+2490a7e	254f968	docs: fold dataset spec into readme and drop upstream snapshot
+24a6e03	533cb8a	docs: point the quick start at official_tests and list the new tools
+24b2471	388c400	feat: add empty triangle shape feature as strongest rank signal
+268320c	4e0647d	feat: add per move sequence features preserving temporal structure
+27620e7	b302d49	docs: expand readme with design principles and module map
+28464b3	35fa9a0	feat: schedule by device so mps and cpu jobs run truly in parallel
+2a752ed	d343801	feat: add submission builders with official format validation
+2a9ddd8	b36178e	docs: record question level blending pushing rank above baseline
+2b2c1b5	71632f1	feat: add opening transition and region visit features
+2bbfae8	4c8f9e7	docs: note that official sources do not document test set construction
+2d2b0b6	51af04a	feat: add a seed option to the sequence identity trainer
+2d487f1	3f6c341	exp: seq_240moves scores 0.5660 (無增益)
+2e4d0b5	0d4e35f	docs: document asymmetry between the two subtasks in readme
+317f49b	63651ec	feat: support opponent perspective sequences in store and training
+32f9f22	6d0c7e6	docs: show multi backend gbdt ensemble is a net negative here
+335bbbd	5577d02	chore: record experiment logs and loop state
+337d408	0535120	docs: document empty triangle as strongest rank signal in readme
+3519b29	0748249	feat: add question level modelling and posterior blending
+369db78	7e5f7e0	feat: aggregate move-shape statistics into game-level features
+36e600e	a6e1f35	fix: align gate criterion and production score with shipped pipeline
+370dafa	5b69dd3	feat: widen the player metric model to a 1024-unit hidden layer
+383fa95	ef9e31c	docs: link colab guide from readme
+3904fb0	7e369da	feat: add player-disjoint split and question-level benchmark builders
+3a3efbd	9889a8b	docs: record that move-shape lifts player identification most where it was weakest
+3a94327	532aa24	docs: record first auto loop batch hitting the scaling ceiling
+3ad9f52	115d309	feat: add multi store wrapper for concatenating feature sets
+3b1fc7a	f9cfb6b	feat: use move-shape features for player identification
+3ba28f5	895937d	docs: correct the disproven sequence-window item and re-rank the backlog
+3c4d999	f2a99ad	docs: ensemble is saturated on current features, even a different architecture adds nothing
+3d1fc71	4023558	feat: use dual view sequence model with tuned blend weight
+3dd8b4c	4c68c62	chore: align the gate baseline with the shipped ensemble
+3e025f1	ab4054c	docs: publish method write-ups and experiment log for open-sourcing
+3e71278	350ae1e	feat: predict the updated player test set with original and new questions
+3e85a8c	e1c2f82	fix: restore mode and add no grad in cnn rank evaluation
+408c970	43f93f8	chore: keep experiment records and run artifacts out of the public repo
+41a2e66	481c681	feat: ship per-move position-judgement quality as a fifth sequence variant
+41f44cd	7bb8ef3	exp: seq_quality scores 0.5923 (增益低於門檻)
+42b5e9b	df494cb	docs: refute router direction with oracle gap analysis
+4335899	9b4a169	docs: correct overclaimed rank score with multi seed evaluation
+436c725	938062e	docs: record opponent perspective features as a new signal source
+44a1082	aeecc4b	feat: add territory and invasion rate features for dan discrimination
+47acf4d	90ef81b	feat: add handcrafted feature extractor with life-and-death statistics
+4813acd	fb2e528	feat: add kaggle training notebook and time budget option
+494772b	7fda090	feat: describe the five-model sequence ensemble variant
+4a646a7	4871043	feat: cache skill-policy log-likelihoods for every validation game and blend them
+4ac4048	3a8f05c	fix: raise default evaluation question count to reduce checkpoint noise
+4b13d40	9a4bd92	feat: add multitask training script with question-level checkpoint selection
+4c08bea	f9f3a3d	feat: add thread control and document the ensemble gate redesign
+50a5fb4	62190e0	feat: add restnet board transformer blocks to trunk
+50ed0de	f4819c5	docs: note that mid-training CNN scores are premature to judge
+5146003	7a2ca7d	docs: update rank model ceiling with final scaling results
+514fd35	9b2203a	feat: fuse sequence-template and metric-classifier scores for new player questions
+5267207	3dfe06e	feat: blend move sequence model into rank prediction pipeline
+5304f95	700acfb	docs: document opponent perspective discovery in readme
+53f8b09	81bb082	feat: add a dependency check mode so missing artifacts fail loudly
+54465a3	e210c0b	chore: add recipe for submission P012
+56566b6	8c66fc9	fix: parse player colour strictly instead of defaulting to white
+56df313	cf9a6b5	feat: add rank-assisted player matching experiment for competition 1
+57dc6cc	d8ce0c2	feat: allow selecting a subset of HumanSL profiles via environment variable
+57f87ad	a4d0003	docs: refute cross task latent features for rank prediction
+580b681	ff985f8	feat: retrain stage two reranker on all compositions
+5813614	0a63b68	fix: replace nelder mead threshold search with exact dynamic programming
+58908cf	696858d	exp: seq_wider scores 0.5764 (增益低於門檻)
+58d5e63	bcd253b	perf: batch question level prediction in rank baseline
+5acde64	ec16fd7	feat: add the board CNN to the production ensemble
+5b89110	89097ae	fix: sort player ids so simulated benchmarks reproduce across processes
+5c0d112	8ee3895	feat: describe the prior and Sinkhorn ablation variants in the registry
+5c3102f	ec9001c	docs: identify board cnn as the complementary direction for gpu
+5d40065	4aa13c6	feat: add the move-timing board model as a rank stacker component in predict
+5daeb15	a7b4bc5	feat: add a skill-conditioned move-prediction model trained on our own games
+5dfdb7d	f2887bd	feat: default the HumanSL component to per-move mean log-likelihood
+613bd66	5cfdf81	feat: add sgf parser and go board with capture and liberty planes
+6326940	ff9ecb3	exp: board CNN gives 0.0080 once checkpoints are picked by rank correlation
+654fe32	1fb4392	exp: board CNN adds 0.0020 to the ensemble while still badly undertrained
+6554a72	322863a	chore: queue question-level shape experiment
+66150e6	7fce5fe	docs: update paths for the data and references folders
+682c697	874a4f1	feat: add resume support and colab training guide
+684721d	0d5f4bc	exp: mlp_shape scores 0.5900 (增益低於門檻)
+6a08af3	5223e4e	feat: add move-shape transition features and queue the identity experiment
+6a1edf3	7e12de3	docs: locate rank loss at the kyu dan boundary and refute quantile fix
+6ab20e5	8b84bbe	docs: rewrite kaggle notebook around feature based pipeline
+6acf76b	e71c3c4	test: unit-test the cross-task safety decision
+6c81592	7ed78c5	feat: describe the four-model ensemble with the local-patch sequence model
+6cfe49c	8a8383d	feat: add metric learning on handcrafted features for player identification
+6d03178	e03eb59	refactor: move rank model definitions into the library and guard the layering
+6dd9189	86ea6c0	feat: add parallel builder for move sequence store
+6f84c08	a87c9a7	chore: add pyproject and remove sys path boilerplate from tests
+70c7d1e	9f01f27	feat: add per feature signal diagnostic report
+7160ffd	66e788d	test: add question file parsing tests for prediction pipeline
+71d0f7a	a413542	refactor: make prediction components reusable for augmented evidence
+726f639	26e4ee0	feat: average gate scores over multiple calibration splits for tighter estimates
+72c4499	2b52463	perf: cache player row index to speed up repeated pool construction
+74048a9	82479b0	docs: record the board CNN state and flag a now-suspect earlier finding
+747dba6	725fc7e	fix: measure per-track baselines instead of silently skipping them
+748c743	bbc4d29	chore: retire the question-level shape experiment with its reason
+758ae15	c65d862	fix: use official question size distribution in benchmarks
+770500a	c45b1f2	feat: ensemble sequence variants as separate stacker components
+772be0d	3d4e9ea	docs: correct the board CNN feasibility assessment
+77796cc	1081ef2	fix: restore model train eval mode in question posteriors
+7861d3d	108ffa9	fix: append gate candidates to the live ensemble instead of replacing it
+789a105	e61cf9e	docs: add competition day runbook
+79ad868	96738c4	docs: record that shape transitions add nothing over shape frequencies
+7b3591f	a772aed	feat: add measurement of how question size affects rank score up to 100 games
+7b78b09	6bad391	docs: judge a component by rank correlation, not its standalone decoded score
+7b85016	ac08807	feat: make calibration rank prior configurable via --calib-prior
+7ed8344	bb8ba3a	docs: record competition 1 per-composition scores under the shipped configuration
+7f04c6e	5b000bb	feat: add ordered opening sequence features
+8009336	f5ff88c	feat: add the sequence identity embedding to the v2 player predictor
+8015728	561effc	feat: describe the seven-model same-color HD fusion variant
+805acf0	518df4d	docs: add running experiment ledger with all measured results
+80a80c7	4d1605b	feat: add a candidate-pool classifier option for player identification
+813ab99	cf472c0	feat: apply stage two reranker in prediction pipeline
+81bf800	5eacd1d	exp: mlp_wider scores 0.5684 (無增益)
+8224959	a731abc	feat: allow extra feature stores in metric learning
+824d5e4	ef630ad	docs: verify player identification across 25 independent evaluations
+8282eef	0533a88	feat: add automatic loss scale balancing to multitask training
+8309f04	6a6bed7	chore: track submission recipes and fingerprint every input file named in the command
+83ab5bd	bd5d206	docs: correct rank loss diagnosis with adjacent pair separability
+83d4e8b	2fb43ca	exp: seq_rankloss scores 0.5860 (增益低於門檻)
+8427eb2	7ae7002	feat: describe the pool classifier variant in the submission registry
+85f1af1	5793ff3	feat: train the player metric model for 12000 steps
+871ceec	88c3177	docs: surface the measured bottleneck in the readme
+8825ebb	79e1d1e	feat: keep per-seed scores in the player evaluation for paired comparisons
+883f37b	84059bf	docs: quantify in sample inflation for thresholds and stacker
+886619e	54316ee	docs: update rank score and document decoder transfer comparison
+8874acb	b88dca8	chore: retire early exploration scripts into scripts/legacy with provenance notes
+893555b	6c29c25	docs: confirm opponent features at scale with eight seed comparison
+89af311	a3e37af	docs: update rank score after stacker ships
+89c6a63	d19ec4b	feat: drop global position features from identity metric learning
+89df8b5	e39f464	feat: add handcrafted baselines and offline evaluation runner
+8a2cdb6	42ba1f9	docs: record blend weight and rank model sweep
+8b95c69	30db63f	feat: default to opponent perspective pipeline for rank prediction
+8c42790	077961d	chore: add validation experiment scripts and gitignore rules
+8e45595	8807d6b	feat: train a move-sequence identity embedding for player identification
+911f1ba	02bf3ba	feat: add a whole-game move-timing board model for rank prediction
+9145da0	8e4a4d0	feat: record machine time for every experiment and report gain per hour
+92e1f55	5dd5a72	feat: add rank mlp ensemble script
+955e9a0	4e53d0f	chore: add recipes for submissions P008 to P011
+959d8f4	75bee43	fix: sample validation rows randomly and bulk load sgf in mock testset
+962e678	d55a0c5	feat: add learned stacker to replace fixed weight blending
+9631589	5105544	feat: add the opponent-move HumanSL component to evaluation and prediction
+967ca3d	c54d210	feat: add set transformer pooling katago global pool bias and gbdt ensemble
+9937ceb	019f6c2	refactor: move datasets under data/ and read paths from shared constants
+9c1fb4a	828a4a8	fix: default dataloader workers to zero so board CNN training can progress
+9cd1f96	3b70d4c	feat: add optional symmetry test-time augmentation to the board component
+9daf014	8d0d748	feat: describe the five-profile HumanSL variant in the submission registry
+9f9b379	cabd994	chore: keep official test files and submissions out of the repository
+a035c95	a45cc3f	docs: record measured impact of quality features on both subtasks
+a03b496	991d689	feat: derive each sequence checkpoint's input views from its own recorded args
+a1fcfe3	77ab771	chore: remove comments from gitignore
+a2a9854	7aa8493	docs: measure impact of correcting question size distribution
+a2cbb9f	ab12e8b	docs: mark opponent pipeline shipped and sequence model in progress
+a2d7eda	cfb68b2	fix: accept 1600-row player submissions in the format check
+a49e245	4f10cff	feat: add end to end prediction script with mock testset dry run
+a4c8f34	49b6691	perf: batch sequence inference across games instead of per question
+a4da24d	98dc0ab	fix: let the metric trainer accept feature stores of differing widths
+a6219ed	0b6b007	feat: add player retrieval postprocessing evaluation script
+a782b30	fdc71d4	docs: record how memory oversubscription silently slows training fivefold
+a7959d7	e5037fb	feat: make the auto loop track-aware so it can improve competition 1 too
+a8a2a2b	1da9d2f	feat: allow averaging pool classifiers over several L2 strengths
+a8e3c8e	b5d3189	feat: measure cross-task evidence transfer and its failure mode
+a9247db	c87cd98	fix: shrink the KataGo network cache so long runs do not exhaust memory
+a97b6ec	1009417	fix: sample player games randomly in feature signal report
+ab3fcfa	226476d	fix: perturb single channel in board transformer mixing test
+abdde73	e0186d0	feat: add engine free move quality features for rank prediction
+acec2c8	58c62da	feat: add rank test-shift alignment, SE strength features and same-color HD fusion for player v2
+ad7357e	97c7273	feat: ship move-shape sequence variant and cross-task evidence transfer path
+b08702b	c4c76c7	feat: add board CNN as an optional stacker component
+b090c8c	0fe03ff	fix: use asymmetric case in geometric blend test
+b1ba390	cfdc751	exp: seq_240_fair scores 0.5706 (無增益)
+b233ffe	cb717de	docs: generalise why every per-subgroup specialisation fails
+b341ae4	9d80eb6	docs: update scores after shipping the shape variant
+b5bbc96	fe4ff48	feat: add greedy forward ensemble selection with worst-case stopping
+b5d4001	11e46b1	feat: add self invalidating cache for question level posteriors
+b611bfe	51f8196	fix: escape percent signs in argparse help so --help works
+b77814a	891a817	docs: record confirmed official schedule rules and test set spec
+b879085	852c915	chore: write KataGo logs under cache instead of the repository root
+b88b96f	9dad23d	refactor: share HumanSL pool questions and posteriors through the library
+b92fc9e	f61e40a	docs: correct the prerequisite artifact list and add a rented-GPU plan
+b984fc0	79788b3	fix: restore model mode and disable grad in embed features
+bb197f7	aff4dd5	exp: metric_trans scores 0.9630 (無增益)
+bb96955	62c5df4	fix: select board CNN checkpoints by rank correlation not decoded score
+bbed000	3a5eaeb	docs: explain why shape helps the sequence model but not the game MLP
+bc2872d	371cbb4	docs: update scores under official spec and tightened sinkhorn
+bc388ed	ed72b46	feat: optionally feed HumanSL score-loss features to the stacker in evaluation
+bcbc933	6784169	chore: install the package instead of patching sys.path in every script
+bd4432a	67a2781	docs: measure rank-prior mismatch exposure and rule out EM prior estimation
+bd496b3	4f6b4b2	feat: ship the eight-seed metric ensemble and add weight EMA to board training
+bd7b67e	2ac7a4c	feat: add a paired evaluation of HumanSL on a fixed game pool
+be28937	4842b75	docs: add a where-to-go-next summary to the ledger header
+c178067	4c917df	fix: use each board snapshot as its own set member in train and eval
+c38a1c8	e854090	feat: add a submission registry with per-upload provenance
+c3bbba1	0668033	docs: document the cross-task weight tradeoff in the flag help
+c44a853	9a846cf	feat: add move coordinate and local board patch sequences for player identity
+c5a5440	5991e42	feat: add sequence model training script for rank prediction
+c60dea4	9ae8e21	fix: checkpoint the skill-policy store build so it can resume
+c6bb288	f93f1af	feat: blend question level model into prediction pipeline
+c74b181	f3b687f	feat: add unified experiment log with git traceability
+c90e370	1a08071	exp: mlp_8seed scores 0.5725 (增益低於門檻)
+ca1aa5c	e67c651	docs: add measured findings and refuted techniques to readme
+cc89501	9ede241	docs: note that datasets come from the AIdea competition page
+ccc9b49	33a6ed2	test: lock in per-game normalisation order for player templates
+cd3dba4	c171300	docs: record move sequence model beating handcrafted features
+cd96506	8c2afe7	feat: record environment, model, data, and commit provenance under repro
+d02a979	9ffe8bc	fix: use the first selected HumanSL profile for extra features
+d061889	3c27ce0	feat: add ordinal threshold decoding as default for rank prediction
+d0edf48	d767486	feat: parameterise sequence window and queue longer window experiment
+d16d494	a8d3e28	docs: link the experiment ledger from readme
+d28dc1b	baefc00	fix: load the shipped board model from a frozen copy instead of the training output
+d300de9	fcb13e7	fix: train the set pooling head that evaluation depends on
+d373a1e	dd370d5	feat: add detector for whether both subtasks share the same 400 players
+d631229	85a7f2f	feat: score every move with KataGo HumanSL at ten skill levels
+d9dc804	f89ef37	chore: keep the early exploration scripts in scripts with status notes
+da09a0e	21219cc	feat: add pytorch datasets with pk sampling and dihedral augmentation
+da488de	0978e38	docs: warn that even running the test suite can evict training tensors
+daacb7d	9254b7b	perf: parallelise feature extraction in prediction pipeline
+dad5b1a	0f955b9	docs: scan ensemble subsets, keep current, flag base as a single testable hypothesis
+daec2a7	292a6ec	docs: record metric learning breakthrough in readme
+dba13e8	0b35731	exp: metric_shape scores 0.9653 (採用)
+dbd1564	623c177	docs: measure pca dimensionality reduction as monotonically harmful
+dd62416	33b2797	feat: train the player metric model for 6000 steps
+ddb4e00	b763d40	feat: ensemble several sequence identity models in the v2 player predictor
+ddc64c3	1875352	feat: add multitask network and score-aligned loss functions
+de6de54	1cf5c06	docs: record shape-feature probe and sequence inference speedup
+de8980c	7f62a11	feat: add oof cache and autonomous experiment loop
+e0ded45	6941d36	exp: seq_narrow_deep scores 0.5686 (無增益)
+e1d2f3f	4fb0697	docs: update headline scores
+e35d29c	a9bc02d	docs: report the shipped stacker score rather than the exploratory one
+e6e0289	1bd9697	docs: record sinkhorn assignment lifting player identification
+e707694	82d3687	docs: record learned stacker lifting rank prediction
+e75bd8f	665d7fe	feat: gate candidates against the live ensemble and self-invalidate stale baselines
+e98af21	bdb53df	fix: give the board component the same set members in eval as in training
+e99caa9	abc7553	docs: disprove the drop-base hypothesis with higher-power paired testing
+e9fb72f	2945185	exp: seq_shape scores 0.5842 (採用)
+ea7399a	762c049	feat: allow calibrating only the decision thresholds to a different rank prior
+eb5dae1	ce48756	feat: default to the verified best rank model in prediction
+ec91c93	a155f7c	feat: use rank mlp ensemble in prediction pipeline
+ee4e5b7	6e76085	feat: add opponent perspective option to feature store builder
+ee582f7	ef75555	perf: keep sequence tensors in float16 and add parallel scheduling
+ef8367f	b340a67	docs: explain why internal scores understate production by about 0.0035
+efc2e8f	c3f07ef	feat: add pairwise ranking loss and record prior-robustness of model selection
+efcd32f	1f5e08e	feat: tighten sinkhorn eps now that bijection is officially confirmed
+f16db96	45cb8b7	fix: save and restore full gonet config instead of guessing
+f2e5f3d	bdfd6ca	exp: seq_full_data scores 0.5756 (增益低於門檻)
+f481c8a	f94c6dc	fix: train rank model on all games by default in prediction script
+f5b9761	02d7e70	refactor: keep two sequence variants and derive their stores from each checkpoint
+f5c9545	90790dc	exp: seq_5seed scores 0.5649 (增益低於門檻)
+f5fdb12	47b2258	feat: support opponent perspective features across training and inference
+f750353	d25503b	feat: add per-move position-judgement quality features
+f755e6b	8f0ed23	exp: seq_gru scores 0.5899 (增益低於門檻)
+f89d0a4	8896f41	docs: update headline scores
+f9a069f	ebdc989	feat: add sinkhorn global assignment for player identification
+fc9b417	5e6d57a	feat: add stage two reranker with mixed composition training
+fd26242	f1eaf21	docs: update rank scores after opponent pipeline becomes default
+fd9f9dd	63c881b	feat: add board plane representation with liberty and canonical color planes

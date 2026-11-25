@@ -3,7 +3,7 @@
  "task": "rank",
  "variant": "humansl",
  "cmd": "python3 scripts/predict.py --humansl --test-dir data --out-dir cache/submissions/humansl",
- "git_commit": "ea7399a",
+ "git_commit": "762c049",
  "git_dirty": "clean",
  "data_fingerprint": "62137c0b032b66b2",
  "models_sha256": {

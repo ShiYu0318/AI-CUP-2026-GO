@@ -3,7 +3,7 @@
  "task": "player",
  "variant": "pool_classifier",
  "cmd": "python3 scripts/predict.py --pool-classifier --test-dir data --out-dir cache/submissions/poolclf",
- "git_commit": "8427eb2",
+ "git_commit": "7ae7002",
  "git_dirty": "clean",
  "data_fingerprint": "62137c0b032b66b2",
  "models_sha256": {

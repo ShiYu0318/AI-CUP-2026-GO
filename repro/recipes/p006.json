@@ -3,7 +3,7 @@
  "task": "player",
  "variant": "v2_seq",
  "cmd": "python3 scripts/predict_player_v2.py --old submissions/player/p003.csv --method classifier --l2 1e-4 --seq-identity cache/seq_identity/step3000.pt --out cache/submissions/player_v2_seq_test/submission_player.csv",
- "git_commit": "8009336",
+ "git_commit": "f5ff88c",
  "git_dirty": "clean",
  "data_fingerprint": "62137c0b032b66b2",
  "models_sha256": {

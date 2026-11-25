@@ -3,7 +3,7 @@
  "task": "player",
  "variant": "no_sinkhorn",
  "cmd": "python3 scripts/predict.py --test-dir data --sinkhorn 0 --out-dir cache/submissions/no_sinkhorn",
- "git_commit": "1f33347",
+ "git_commit": "5f5a56e",
  "git_dirty": "clean",
  "data_fingerprint": "62137c0b032b66b2",
  "models_sha256": {

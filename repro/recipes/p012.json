@@ -3,7 +3,7 @@
  "task": "player",
  "variant": "v2_zfuse7_color_hd",
  "cmd": "python3 scripts/predict_player_v2.py --old submissions/player/p003.csv --method zfuse --fuse-c 0.2 --same-color --hd-lambda 0.35 --seq-identity cache/seq_identity/step12000.pt cache/seq_identity_30k_s2/step14000.pt cache/seq_identity_30k_s3q/step12000.pt cache/seq_identity_patch/step12000.pt cache/seq_identity_patch_s6/step12000.pt cache/seq_identity_patch7/step16000.pt cache/seq_identity_all256/step12000.pt --out cache/submissions/player_v2_p012/submission_player.csv",
- "git_commit": "8015728",
+ "git_commit": "561effc",
  "git_dirty": "clean",
  "data_fingerprint": "b1db0e1659a3f09a",
  "models_sha256": {
