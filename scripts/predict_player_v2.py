@@ -77,7 +77,7 @@ def sgf_hd(sgf: str) -> int:
 def hd_loglik(c_hd, c_black, c_pid, names, q_hd, q_black, fsizes) -> np.ndarray:
     """HD1 標頭似然（分色 Beta-binomial，先驗 0.6/3.0）→ (題數, 候選數) 的 log 似然總和。
 
-    個人「讓先（HD1）」比例的分半相關 0.943（docs/PRIVATE_FIRST_PLAN.md §3.3）。"""
+    個人「讓先（HD1）」比例的分半相關 0.943（RESULTS.md §2.41）。"""
     nm = len(names); idx = {n: i for i, n in enumerate(names)}
     ci = np.array([idx[p] for p in c_pid])
     h1 = (c_hd == 1)

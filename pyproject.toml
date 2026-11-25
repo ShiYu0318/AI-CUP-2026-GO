@@ -5,7 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aicup2026-go"
 version = "0.1.0"
-description = "AI CUP 2026 圍棋棋力與風格預測競賽 —— 驗證框架與模型"
+description = "AI CUP 2026 圍棋棋力預測與玩家辨識"
+license = "MIT"
+readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.24",

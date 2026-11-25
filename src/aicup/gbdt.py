@@ -5,7 +5,7 @@
 out-of-fold 預測，再疊一層 meta-learner。不同實作的偏誤結構不同，融合幾乎必定有增益。
 
 ⚠️ **分組必須是玩家，不是棋局。** 用隨機 KFold 會讓同一位玩家的棋局橫跨 fold，
-OOF 預測被身分洩漏污染，stacking 權重會學歪（docs/02 §2.1 實測洩漏率 100%）。
+OOF 預測被身分洩漏污染，stacking 權重會學歪（實測洩漏率 100%）。
 
 本機可能只裝了 sklearn；LightGBM / XGBoost / CatBoost 在 Kaggle 與 Colab 都預裝。
 未安裝的 backend 會自動略過，不會讓整個流程失敗。

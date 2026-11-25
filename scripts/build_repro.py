@@ -1,7 +1,7 @@
 """產生 `repro/` 底下的重現性紀錄：環境、套件、模型雜湊、訓練參數、資料指紋、commit 對照。
 
     python3 scripts/build_repro.py                     # 全部重建
-    python3 scripts/build_repro.py --test-dir data   # 資料指紋一併涵蓋官方測試檔
+    python3 scripts/build_repro.py --test-dir data --test-dir data/mock_tests --test-dir data/v2/tests
 
 產物（全部進 repo，給賽後的報告與論文用）：
 
@@ -39,6 +39,13 @@ MODELS = [
     ("cache/board/best.pt", "競賽二 板面 CNN（34 層盤面快照、Set Transformer 集合池化，160k 步）"),
     ("cache/feature_metric_h1024s12k/models.pt", "競賽一 度量學習（8 seed、隱藏層 1024、12000 步、ArcFace）"),
     ("cache/skill/best.pt", "（未上線）以棋力為條件的走法模型，RESULTS.md §2.33"),
+    ("cache/seq_identity/step12000.pt", "競賽一 v2 逐手序列身分模型（sequences＋seqshape，seed 0，第 12k 步）"),
+    ("cache/seq_identity_30k_s2/step14000.pt", "競賽一 v2 逐手序列身分模型（sequences＋seqshape，seed 2，第 14k 步）"),
+    ("cache/seq_identity_30k_s3q/step12000.pt", "競賽一 v2 逐手序列身分模型（＋seqqual，seed 3，第 12k 步）"),
+    ("cache/seq_identity_patch/step12000.pt", "競賽一 v2 逐手序列身分模型（＋5x5 局部盤面，50 萬盤，第 12k 步）"),
+    ("cache/seq_identity_patch_s6/step12000.pt", "競賽一 v2 逐手序列身分模型（＋5x5 局部盤面，seed 6，第 12k 步）"),
+    ("cache/seq_identity_patch7/step16000.pt", "競賽一 v2 逐手序列身分模型（＋7x7 局部盤面，全部 78 萬盤，第 16k 步）"),
+    ("cache/seq_identity_all256/step12000.pt", "競賽一 v2 逐手序列身分模型（全部 132 維逐手特徵、寬 256，第 12k 步）"),
 ]
 #: 外部模型：來源與授權要寫進最終報告（官方 Q&A Q5）
 EXTERNAL = [
@@ -110,7 +117,7 @@ def build_models() -> None:
         rows.append(f"{path}\t{sha256(path)}\t{os.path.getsize(path)}\t{use}\t本專案訓練")
         ck = torch.load(path, map_location="cpu", weights_only=False)
         info = {"checkpoint": path, "sha256": sha256(path)}
-        for k in ("args", "config", "step", "score", "blend_weight"):
+        for k in ("args", "config", "step", "score", "blend_weight", "v2_score", "stores", "n_feat", "width", "dim", "in_scale"):
             if isinstance(ck, dict) and k in ck:
                 info[k] = ck[k]
         name = path.replace("cache/", "").replace("/", "__").replace(".pt", "") + ".json"
@@ -138,7 +145,7 @@ def build_data_manifest(test_dirs) -> None:
     whole = hashlib.sha256("".join(f"{k}:{v}\n" for k, v in files.items()).encode()).hexdigest()
     with open(os.path.join(REPRO, "data_manifest.json"), "w", encoding="utf-8") as fh:
         json.dump({"all_files": len(files), "all_sha256": whole, "files": files,
-                   "note": "訓練集為官方 v1.0（v1.1 只補上 HD[n]，刻意不換，見 docs/RUNBOOK.md）"},
+                   "note": "訓練集為官方 v1.0（v1.1 只補上 HD[n]，刻意不換：HumanSL 儲存檔以 SGF 原文雜湊為鍵）"},
                   fh, ensure_ascii=False, indent=1)
     print(f"  寫出 repro/data_manifest.json（{len(files)} 個檔，指紋 {whole[:16]}）")
 

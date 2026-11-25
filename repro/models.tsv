@@ -6,5 +6,12 @@ cache/rank_seq_shape/models.pt	e44f83b3fcde577d81304040f9b7d1827fc5a79e46e30324d
 cache/board/best.pt	4e63db9a14ceab8b00c7422ce10c2b1bc24d64998279125371b2228b9234c95e	20082575	競賽二 板面 CNN（34 層盤面快照、Set Transformer 集合池化，160k 步）	本專案訓練
 cache/feature_metric_h1024s12k/models.pt	5f1b871d6a4fc4aa412d4ff8ed2acbaa207db85b6f3bf69d8017df23891a155e	80537473	競賽一 度量學習（8 seed、隱藏層 1024、12000 步、ArcFace）	本專案訓練
 cache/skill/best.pt	af406e4b9fb9c89073c9e856e325091f601ce35304b491640f723057513a9ed3	5661415	（未上線）以棋力為條件的走法模型，RESULTS.md §2.33	本專案訓練
+cache/seq_identity/step12000.pt	42d210d491a0b10a8852d419558f741f8fa87b2ef2edf201d64cda784a2781a1	8539885	競賽一 v2 逐手序列身分模型（sequences＋seqshape，seed 0，第 12k 步）	本專案訓練
+cache/seq_identity_30k_s2/step14000.pt	7a4b56f3406685e11cd7791196cc1569cb341122ad876915b496182256743613	8539885	競賽一 v2 逐手序列身分模型（sequences＋seqshape，seed 2，第 14k 步）	本專案訓練
+cache/seq_identity_30k_s3q/step12000.pt	c57e4412b6ecd8753023b826e1bc4d1c716254da47f7fbe9d5988544583adcf0	8570669	競賽一 v2 逐手序列身分模型（＋seqqual，seed 3，第 12k 步）	本專案訓練
+cache/seq_identity_patch/step12000.pt	92f3fbf4c14cbee1bb88066f9f874c8a758a6ab70bb89e31f095d26768218650	8740839	競賽一 v2 逐手序列身分模型（＋5x5 局部盤面，50 萬盤，第 12k 步）	本專案訓練
+cache/seq_identity_patch_s6/step12000.pt	c37f1436ca815b27bd43fc60a93380528645c34db789e06779c304487a188cd0	8740839	競賽一 v2 逐手序列身分模型（＋5x5 局部盤面，seed 6，第 12k 步）	本專案訓練
+cache/seq_identity_patch7/step16000.pt	ee6c5b4a7695a94171fbe8304cc68ce894e6cf2bb9db0abf1acc229c5c0bcb80	8925799	競賽一 v2 逐手序列身分模型（＋7x7 局部盤面，全部 78 萬盤，第 16k 步）	本專案訓練
+cache/seq_identity_all256/step12000.pt	2401728512a7465a3f348d9a86e776d41ee3e40c053657b6eb7ca6de2c4893d7	14905511	競賽一 v2 逐手序列身分模型（全部 132 維逐手特徵、寬 256，第 12k 步）	本專案訓練
 cache/katago/b18c384nbt-humanv0.bin.gz	637746e44f0efe00ad1245a50aa9bbf0716efe364c43965ead97bd6835d84ab5	99066230	競賽二 KataGo HumanSL（10 種棋力 profile 的人類走法機率）	https://github.com/lightvector/KataGo/releases/download/v1.15.0/b18c384nbt-humanv0.bin.gz（KataGo network license）
 /opt/homebrew/Cellar/katago/1.18.2_2/share/katago/kata1-b18c384nbt-s9996604416-d4316597426.bin.gz	9d7a6afed8ff5b74894727e156f04f0cd36060a24824892008fbb6e0cba51f1d	97898094	競賽二 KataGo 主模型（HumanSL 查詢時一併載入、算目數損失）	Homebrew katago 1.18.2 附帶：kata1-b18c384nbt-s9996604416-d4316597426.bin.gz（KataGo network license）

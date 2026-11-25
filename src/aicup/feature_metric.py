@@ -113,7 +113,7 @@ def embed_features(model: FeatureEmbedder, scaler: FeatureScaler, X: np.ndarray,
 def player_template(emb: np.ndarray) -> np.ndarray:
     """多局 embedding -> 玩家向量。L2 -> 平均 -> 再 L2。
 
-    順序很重要：實測「先平均再標準化」會掉 0.26 分（docs/02 §10.8）。
+    順序很重要：實測「先平均再標準化」會掉 0.26 分。
     這裡輸入已是 L2 正規化的 embedding，所以只需平均後再正規化一次。
     """
     if len(emb) == 0:

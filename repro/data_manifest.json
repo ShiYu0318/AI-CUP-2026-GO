@@ -36,5 +36,5 @@
   "data/v2/tests/player_identification_test_public.csv": "fbf6f14de57bc37bbec6e3d732143a2561887d37b1f36271223ad1a14810ac74",
   "data/v2/tests/sample_submission_player_v2.csv": "70bf0e3cd31ce8aa0ad438c576f77b3f8c0ca3a49a8089bd026108ad3ba26c9c"
  },
- "note": "訓練集為官方 v1.0（v1.1 只補上 HD[n]，刻意不換，見 docs/RUNBOOK.md）"
+ "note": "訓練集為官方 v1.0（v1.1 只補上 HD[n]，刻意不換：HumanSL 儲存檔以 SGF 原文雜湊為鍵）"
 }

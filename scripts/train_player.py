@@ -6,14 +6,14 @@
 
 本腳本每 --eval-every 步就真的建一次候選庫、算一次官方公式分數，並據此選 checkpoint。
 
-架構（對齊 docs/02 §4.3 與 NeurIPS 2021 behavioral stylometry）：
+架構（對齊 NeurIPS 2021 behavioral stylometry）：
     盤面 (34,19,19) -> GoTrunk(含 KataGo global pooling bias) -> GeM -> BN-Neck -> embedding
     訓練：Sub-center ArcFace(6,405 身分, K=3, dynamic margin) + batch-hard triplet
     取樣：P 位玩家 x K 局（batch-hard mining 才有素材）
     推論：丟棄分類頭，只用 embedding；單局標準化 -> L2 -> 平均 -> 再 L2
 
 ⚠️ 推論時**必須丟棄 ArcFace 分類頭**——候選庫是未見身分，分類頭沒有對應的輸出單元。
-   （docs/02 §4.6）
+
 
 用法：
     python3 scripts/train_player.py --device cuda --steps 20000 --resume
@@ -80,7 +80,7 @@ def embed_games(model, meta, cache, rows, device, n_snapshots: int, batch: int =
 def template(emb: torch.Tensor) -> torch.Tensor:
     """多局 -> 玩家向量。L2 -> 平均 -> 再 L2（人臉 template 的標準作法）。
 
-    實測（docs/02 §10.8）：這個順序相對「先平均再標準化」值 +0.26 分，
+    實測：這個順序相對「先平均再標準化」值 +0.26 分，
     比任何特徵工程都重要。
     """
     if len(emb) == 0:

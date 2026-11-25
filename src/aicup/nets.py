@@ -1,6 +1,6 @@
 """共用 backbone 的多任務網路。
 
-一個 backbone 同時服務兩個子題（docs/02 §5.1）：
+一個 backbone 同時服務兩個子題：
   - 玩家辨識 head：8,007 類 sub-center ArcFace（僅訓練期使用）
   - 棋力預測 head：softmax + CORN 雙路
 

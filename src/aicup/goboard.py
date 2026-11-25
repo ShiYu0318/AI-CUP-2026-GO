@@ -115,7 +115,7 @@ class Board:
         """(2*buckets, 19, 19)：黑/白各自「氣數為 1, 2, ..., >=buckets」的分層平面。
 
         氣的分層是 AI CUP 2023 跨多支隊伍獨立實作、公認增益最大的特徵
-        （見 docs/02 附錄 A.3）。它編碼了棋塊死活的緊迫程度，
+        。它編碼了棋塊死活的緊迫程度，
         而棋力的核心差異正是對死活的判斷力。
         """
         out = np.zeros((2 * buckets, SIZE * SIZE), dtype=np.uint8)

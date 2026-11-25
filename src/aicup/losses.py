@@ -7,7 +7,7 @@
 競賽一：官方 baseline 用隨機取樣的 triplet，絕大多數配對早已滿足 margin、
 梯度接近 0。這裡提供 batch-hard triplet 與 sub-center ArcFace。
 ⚠️ ArcFace 的分類頭只在訓練期使用，推論時必須丟棄、只留 embedding
-（候選庫是未見身分，分類頭沒有對應的輸出單元）——見 docs/02 §4.6。
+（候選庫是未見身分，分類頭沒有對應的輸出單元）。
 """
 
 from __future__ import annotations

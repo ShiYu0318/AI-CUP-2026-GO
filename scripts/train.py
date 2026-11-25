@@ -1,12 +1,12 @@
 """多任務訓練腳本（棋力預測 + 玩家辨識共用 backbone）。
 
-設計重點都寫在 docs/02，這裡只列與官方 baseline 不同的關鍵處：
+設計重點見 docs/02-棋力預測.md，這裡只列與官方 baseline 不同的關鍵處：
   - 驗證一律用 player-disjoint 的題目層級官方分數選 checkpoint，
     不是單局 accuracy、更不是訓練 loss（官方玩家辨識 baseline 用訓練 loss 選，
     在 metric learning 上這兩者經常脫鉤）
   - 損失對齊評分函數：指數 soft label + CORN
   - 玩家 head 用 sub-center ArcFace，推論時丟棄、只留 embedding
-  - 8 相位 dihedral 增強（已於 docs/02 §10.2 驗證對兩個子題都安全）
+  - 8 相位 dihedral 增強（已驗證對兩個子題都安全）
 
 用法（單機 GPU）：
     python3 scripts/train.py --device cuda --width 128 --blocks 10 --steps 20000

@@ -84,7 +84,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATE = "artifacts/auto_loop_state.json"
 # 實驗紀錄放在 `docs/`（gitignore），**不會進 GitHub**——
 # 它記的是什麼有效、什麼無效，那是競賽策略。
-LEDGER = "docs/RESULTS.md"
+LEDGER = "notes/RESULTS.md"
 FLOOR = 0.005          # 小於這個增益不算贏（seed 間標準差約 ±0.010）
 
 # 兩個子題各有自己的生產基準與 baseline。

@@ -547,7 +547,7 @@ def check_artifacts(args) -> int:
     if miss:
         print(f"**缺少 {len(miss)} 項。** `predict.py` 不會報錯——"
               f"它會安靜地少用那些成分，交出一份分數較低的檔案。")
-        print("產生方式見 docs/RUNBOOK.md 的「事前必須就緒的東西」（本機文件）。")
+        print("產生方式見 docs/05-工程與重現.md 的「建置順序」。")
         return 1
     print(f"全部 {len(uniq)} 項就緒，可以跑 `python3 scripts/predict.py`。")
     return 0
@@ -720,7 +720,7 @@ def main() -> int:
     ap.add_argument("--rank-shift-align", default="none", choices=["none", "mean", "quantile"],
                     help="棋力測試集偏移校正（public／private 各自做）。mean = 把該 split 的平均期望等級"
                          "平移到「等級均衡的校準集」平均再套切點（保守版）；quantile = 依期望等級排序、"
-                         "強制每級等量。docs/PRIVATE_FIRST_PLAN.md §2.3")
+                         "強制每級等量。實測有害（RESULTS.md §2.41），保留作為消融")
     ap.add_argument("--rank-only", action="store_true", help="只跑競賽二（跳過舊版玩家辨識）")
     ap.add_argument("--decode", default="threshold",
                     choices=["threshold", "expected", "argmax"],

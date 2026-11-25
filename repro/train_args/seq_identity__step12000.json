@@ -1,0 +1,13 @@
+{
+ "checkpoint": "cache/seq_identity/step12000.pt",
+ "sha256": "42d210d491a0b10a8852d419558f741f8fa87b2ef2edf201d64cda784a2781a1",
+ "step": 12000,
+ "v2_score": 0.513301588770292,
+ "stores": [
+  "cache/sequences.npy",
+  "cache/seqshape.npy"
+ ],
+ "n_feat": 24,
+ "width": 192,
+ "dim": 256
+}

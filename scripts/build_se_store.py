@@ -15,7 +15,6 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(__file__))
 
 from aicup.se_strength import N_SE, game_hash, load_se, score_games  # noqa: E402

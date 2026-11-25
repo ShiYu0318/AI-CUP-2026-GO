@@ -19,7 +19,7 @@
 3. **可重現**：commit ＋ 完整指令 ＋ 模型與資料的雜湊，賽後寫報告與論文時能原樣重產
    （配方寫在 `repro/recipes/<編號>.json`）。
 
-事實來源是 `docs/submissions.csv`；`docs/SUBMISSIONS.md` 由本程式**自動產生**，不要手改。
+事實來源是 `notes/submissions.csv`；`notes/SUBMISSIONS.md` 由本程式**自動產生**，不要手改（兩者為本機私有紀錄）。
 兩者與實驗帳本一樣只留本機，不進 repo。
 """
 from __future__ import annotations
@@ -34,8 +34,8 @@ import shutil
 import subprocess
 from datetime import datetime
 
-LOG = os.path.join("docs", "submissions.csv")
-DOC = os.path.join("docs", "SUBMISSIONS.md")
+LOG = os.path.join("notes", "submissions.csv")
+DOC = os.path.join("notes", "SUBMISSIONS.md")
 SUB_DIR = "submissions"
 RECIPES = os.path.join("repro", "recipes")
 RANKS = {"D", "C", "B", "A", "1D", "2D", "3D", "4D", "5D", "6D"}
@@ -305,7 +305,7 @@ def render(rows=None):
     rows = _rows() if rows is None else rows
     g = lambda r, k: r.get(k) or "—"  # noqa: E731
     L = ["# 提交紀錄", "",
-         "> ⚠️ 本檔由 `scripts/submissions.py` **自動產生**，不要手改。事實來源是 `docs/submissions.csv`。", ""]
+         "> ⚠️ 本檔由 `scripts/submissions.py` **自動產生**，不要手改。事實來源是 `notes/submissions.csv`。", ""]
     for task, title in (("rank", "競賽二 棋力預測（R）"), ("player", "競賽一 玩家辨識（P）")):
         tr = [r for r in rows if r["task"] == task]
         L += [f"## {title}", "",
