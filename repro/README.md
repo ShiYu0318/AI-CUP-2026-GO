@@ -1,6 +1,6 @@
 # 重現指南
 
-這個資料夾讓本專案的**每一份輸出**與上線模型都能在另一台機器上重新產生出來。除 `recipes/` 與 `commit_map.tsv` 外都由 `scripts/build_repro.py` 產生，不要手改。
+這個資料夾讓本專案的**每一份輸出**與上線模型都能在另一台機器上重新產生出來。除 `recipes/` 外都由 `scripts/build_repro.py` 產生，不要手改。
 
 | 檔案 | 內容 |
 |---|---|
@@ -9,7 +9,6 @@
 | `models.tsv` | 每個上線 checkpoint 與外部模型的 sha256、大小、用途、來源 |
 | `train_args/*.json` | 每個 checkpoint **內存**的訓練參數（直接從權重檔取出，不靠記憶或文件） |
 | `data_manifest.json` | 訓練集與測試檔的 sha256，以及整體指紋（提交紀錄裡的「資料指紋」就是它的前 16 碼） |
-| `commit_map.tsv` | 版控歷史曾被改寫（作者名稱統一、移除不應公開的資料檔）；實驗日誌引用的是舊雜湊，這裡給新舊對照 |
 | `recipes/<編號>.json` | 每份輸出的完整指令、commit、模型與輸出雜湊（`scripts/submissions.py add` 自動寫入；r 開頭是棋力、p 開頭是玩家辨識） |
 
 ## 一、重建環境

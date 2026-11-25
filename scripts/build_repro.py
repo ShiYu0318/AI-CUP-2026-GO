@@ -1,4 +1,4 @@
-"""產生 `repro/` 底下的重現性紀錄：環境、套件、模型雜湊、訓練參數、資料指紋、commit 對照。
+"""產生 `repro/` 底下的重現性紀錄：環境、套件、模型雜湊、訓練參數、資料指紋。
 
     python3 scripts/build_repro.py                     # 全部重建
     python3 scripts/build_repro.py --test-dir data --test-dir data/mock_tests --test-dir data/v2/tests
@@ -12,7 +12,6 @@
 | `models.tsv` | 上線用的每個 checkpoint 與外部模型的 sha256、大小、用途、來源 |
 | `train_args/*.json` | 每個 checkpoint 內存的訓練參數（不靠記憶或文件，直接從權重檔取出） |
 | `data_manifest.json` | 訓練集與測試檔的 sha256，以及整體指紋 |
-| `commit_map.tsv` | （靜態檔，不由本程式重建）歷史改寫前的舊 commit 雜湊 → 目前的雜湊 |
 """
 from __future__ import annotations
 
@@ -24,7 +23,6 @@ import hashlib
 import json
 import os
 import platform
-import subprocess
 import sys
 from importlib import metadata
 
@@ -150,23 +148,6 @@ def build_data_manifest(test_dirs) -> None:
     print(f"  寫出 repro/data_manifest.json（{len(files)} 個檔，指紋 {whole[:16]}）")
 
 
-def build_commit_map() -> None:
-    """舊雜湊（改名前，tag backup/remote-before-author-rename）→ 新雜湊，依主旨＋作者時間配對。"""
-    def log(ref):
-        out = subprocess.run(["git", "log", "--format=%h%x09%at%x09%s", ref],
-                             capture_output=True, text=True).stdout
-        return [ln.split("\t", 2) for ln in out.splitlines() if ln.count("\t") >= 2]
-    old = log("backup/remote-before-author-rename")
-    if not old:
-        print("  （找不到改名前的 tag，略過 commit_map）"); return
-    new = {(t, s): h for h, t, s in log("main")}
-    rows = ["# 2026-09-29 作者改名（士育→ShiYu）改寫了全部 commit 雜湊；內容（tree）不變。",
-            "# 帳本（docs/RESULTS.md）引用的是左欄的舊雜湊，在遠端請查右欄。", "old\tnew\tsubject"]
-    for h, t, s in old:
-        rows.append(f"{h}\t{new.get((t, s), '（無對應）')}\t{s}")
-    write("commit_map.tsv", "\n".join(rows) + "\n")
-
-
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--test-dir", action="append", default=[],
@@ -178,7 +159,6 @@ def main() -> int:
     build_requirements()
     build_models()
     build_data_manifest(args.test_dir)
-    # commit_map.tsv 是靜態檔：歷史改寫過兩次，舊雜湊已無法從現有的 ref 推回來，不要重建。
     return 0
 
 

@@ -2072,7 +2072,7 @@ PCA 最大化的是**變異**，不是**可分性**。這兩件事在本任務�
 
 #### 第四個靜默 bug：修正只修了一半
 
-準備做上線評估時發現，`e44ec9f`「每個 snapshot 各自是集合成員」
+準備做上線評估時發現，`4c917df`「每個 snapshot 各自是集合成員」
 只修進了 `aicup/dataset.py`（訓練）與 `scripts/train.py`（訓練內評估），
 **`scripts/eval_blend.py` 的 `board()` 還在 `.mean(axis=0)`**。
 
